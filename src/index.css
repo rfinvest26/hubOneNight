@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+@theme {
+  --color-gold-300: #e8c88a;
+  --color-gold-400: #d4b36a;
+  --color-gold-500: #c4a35a;
+  --color-gold-600: #a8893e;
+  --color-surface: #0d0d0d;
+
+  /* Dark surface ramp */
+  --color-ink-950: #020202;
+  --color-ink-925: #050505;
+  --color-ink-900: #070707;
+  --color-ink-800: #0a0a0a;
+  --color-ink-700: #0d0d0d;
+  --color-ink-600: #111111;
+  --color-ink-500: #141414;
+  --color-ink-400: #151515;
+  --color-ink-300: #1a1a1a;
+  --color-ink-200: #2a2520;
+
+  /* Foreground / text ramp */
+  --color-sand-100: #f0ece7;
+  --color-sand-200: #e0e0e0;
+  --color-sand-300: #a09a90;
+  --color-sand-400: #8a8278;
+  --color-sand-500: #6a655e;
+  --color-sand-600: #4a4540;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: #020202;
+  color: #f0ece7;
+  font-family: 'Outfit', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
+/* Content that should remain selectable/copyable (chat text, codes, addresses, prices) */
+.select-text {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Snappier tap response on touch devices */
+a, button, [role="button"], input, textarea, select {
+  touch-action: manipulation;
+}
+
+/* Visible keyboard-navigation focus ring, brand-colored */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-gold-500) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Prevent iOS Safari from forcing a page zoom when focusing inputs under 16px */
+@media (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px;
+  }
+}
+
+/* Hide scrollbars on touch devices, show a slim brand-colored one for mouse/trackpad */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-gold-500) 25%, transparent);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-gold-500) 45%, transparent);
+  }
+}
+
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 12px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.35);
+}
+
+input[type="range"] {
+  accent-color: #c4a35a;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.animate-shimmer {
+  background: linear-gradient(90deg, #111 25%, #1a1a1a 50%, #111 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
