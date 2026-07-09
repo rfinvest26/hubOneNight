@@ -21,6 +21,7 @@ export default function OrderPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [orderDate, setOrderDate] = useState('');
+  const [customDate, setCustomDate] = useState('');
   const [orderTime, setOrderTime] = useState('');
   const [duration, setDuration] = useState('1 час');
   const [location, setLocation] = useState('');
@@ -37,6 +38,19 @@ export default function OrderPage() {
 
   const todayStr = new Date().toISOString().split('T')[0];
   const cashUnlocked = completedOrders >= CASH_PAYMENT_UNLOCK_ORDERS;
+
+  const resolveOrderDate = (): string | null => {
+    const addDays = (n: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + n);
+      return d.toISOString().split('T')[0];
+    };
+    if (orderDate === 'Сегодня') return todayStr;
+    if (orderDate === 'Завтра') return addDays(1);
+    if (orderDate === 'Послезавтра') return addDays(2);
+    if (orderDate === 'Другая дата') return customDate || null;
+    return null;
+  };
 
   useEffect(() => {
     if (!session) {
@@ -94,6 +108,8 @@ export default function OrderPage() {
     if (!session || !model) return;
     setFormError(null);
     if (!orderDate) { setFormError('Выберите дату встречи'); return; }
+    const resolvedDate = resolveOrderDate();
+    if (!resolvedDate) { setFormError('Укажите конкретную дату встречи'); return; }
     if (!location.trim()) { setFormError('Укажите место встречи'); return; }
 
     setSubmitting(true);
@@ -115,7 +131,7 @@ export default function OrderPage() {
       client_id: session.id,
       model_id: model.id,
       status: 'pending',
-      order_date: orderDate,
+      order_date: resolvedDate,
       order_time: orderTime || null,
       duration,
       location: location.trim(),
@@ -126,6 +142,7 @@ export default function OrderPage() {
     });
 
     if (error) {
+      console.error('Order insert error:', error);
       setFormError('Ошибка отправки заказа. Попробуйте позже.');
       setSubmitting(false);
       return;
@@ -162,7 +179,8 @@ export default function OrderPage() {
 
     if (chatId) {
       const paymentLabel = effectivePaymentMethod === 'cash' ? 'Наличными при встрече' : 'Онлайн';
-      const orderMessage = `Здравствуйте! Я оформил заказ на модель ${model.name}.\nДата: ${orderDate}\nДлительность: ${duration}\nАдрес: ${location}\nОплата: ${paymentLabel}\nУслуги: ${services.join(', ') || 'Стандартные'}${comment ? `\nКомментарий: ${comment}` : ''}\n\nДетали времени готов обсудить в чате. Жду подтверждения!`;
+      const dateLabel = orderDate === 'Другая дата' ? resolvedDate : orderDate;
+      const orderMessage = `Здравствуйте! Я оформил заказ на модель ${model.name}.\nДата: ${dateLabel}\nДлительность: ${duration}\nАдрес: ${location}\nОплата: ${paymentLabel}\nУслуги: ${services.join(', ') || 'Стандартные'}${comment ? `\nКомментарий: ${comment}` : ''}\n\nДетали времени готов обсудить в чате. Жду подтверждения!`;
       
       const { error: msgError } = await supabase.from('support_messages').insert({
         chat_id: chatId,
@@ -276,6 +294,15 @@ export default function OrderPage() {
                     </motion.button>
                   ))}
                 </div>
+                {orderDate === 'Другая дата' && (
+                  <input
+                    type="date"
+                    value={customDate}
+                    min={todayStr}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className="w-full mt-2.5 bg-ink-600 border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-sand-100 outline-none focus:border-gold-500/40 transition-all"
+                  />
+                )}
                 <p className="text-[10px] text-sand-500 mt-3 flex items-center gap-1.5 uppercase tracking-wider font-light">
                   <Clock size={10} /> Детали времени обсуждаются в чате
                 </p>
