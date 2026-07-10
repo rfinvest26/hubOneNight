@@ -28,6 +28,34 @@ export interface Model {
   public_comments: string[];
   source: string;
   worker_username: string | null;
+  only_enabled?: boolean | null;
+  only_title?: string | null;
+  only_bio?: string | null;
+  subscription_price?: number | null;
+  telegram_username?: string | null;
+  only_avatar_url?: string | null;
+  only_cover_url?: string | null;
+  only_subscribers_count?: number | null;
+  only_media?: ModelPaidMedia[];
+  created_at: string;
+}
+
+export interface ModelPaidMedia {
+  type: 'image' | 'video';
+  url: string;
+  caption?: string | null;
+  created_at?: string | null;
+}
+
+export interface ModelSubscription {
+  id: string;
+  client_id: string;
+  model_id: string;
+  worker_id: number | null;
+  status: 'pending' | 'active' | 'expired' | 'cancelled';
+  price: number | null;
+  starts_at: string | null;
+  expires_at: string | null;
   created_at: string;
 }
 
@@ -92,6 +120,16 @@ export interface PromoCode {
   created_at: string;
 }
 
+export interface Review {
+  id: string;
+  client_id: string;
+  model_id: string;
+  rating: number;
+  comment: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+}
+
 export interface Favorite {
   id: string;
   client_id: string;
@@ -108,8 +146,15 @@ export interface FilterState {
   heightMax: number;
   weightMin: number;
   weightMax: number;
+  priceMin: number;
+  priceMax: number;
   services: string[];
 }
+
+export type CatalogSort = 'new' | 'price_asc' | 'price_desc' | 'rating';
+
+/** Верхняя граница ценового фильтра, $/час. */
+export const PRICE_FILTER_MAX = 1000;
 
 export const COUNTRY_LABELS: Record<string, string> = {
   ru: 'Россия',

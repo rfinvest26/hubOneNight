@@ -12,8 +12,8 @@ export default function PhotoCarousel({ photos, className = '' }: Props) {
 
   if (!photos.length) {
     return (
-      <div className={`aspect-[4/5] bg-ink-600 flex items-center justify-center rounded-2xl ${className}`}>
-        <User size={56} strokeWidth={1.5} className="text-ink-200" />
+      <div className={`aspect-[4/5] bg-[#eeeeee] flex items-center justify-center rounded-2xl ${className}`}>
+        <User size={56} strokeWidth={1.5} className="text-[#b5b5b5]" />
       </div>
     );
   }
@@ -33,7 +33,7 @@ export default function PhotoCarousel({ photos, className = '' }: Props) {
 
   return (
     <div
-      className={`relative aspect-[4/5] rounded-2xl overflow-hidden bg-ink-600 select-none ${className}`}
+      className={`relative aspect-[4/5] rounded-2xl overflow-hidden bg-[#eeeeee] select-none ${className}`}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       role="group"

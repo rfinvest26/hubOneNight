@@ -1,13 +1,49 @@
-import { X, SlidersHorizontal } from 'lucide-react';
-import { FilterState, AVAILABLE_SERVICES } from '@/types';
+import { SlidersHorizontal, RotateCcw } from 'lucide-react';
+import { FilterState, AVAILABLE_SERVICES, PRICE_FILTER_MAX } from '@/types';
+import BottomSheet from './BottomSheet';
 
 interface Props {
+  open: boolean;
   filters: FilterState;
+  defaults: FilterState;
   onChange: (f: FilterState) => void;
   onClose: () => void;
 }
 
-export default function FilterPanel({ filters, onChange, onClose }: Props) {
+function Range({
+  label, unit, min, max, valueMin, valueMax, onMin, onMax,
+}: {
+  label: string; unit?: string; min: number; max: number;
+  valueMin: number; valueMax: number;
+  onMin: (v: number) => void; onMax: (v: number) => void;
+}) {
+  return (
+    <div className="py-5 first:pt-1">
+      <div className="mb-3 flex items-baseline justify-between">
+        <span className="text-base font-bold text-[#202020]">{label}</span>
+        <span className="rounded-lg bg-[#f1f1f1] px-2.5 py-1 text-sm font-semibold text-[#555]">
+          {valueMin}–{valueMax}{unit ? ` ${unit}` : ''}
+        </span>
+      </div>
+      <div className="flex gap-3">
+        <input
+          type="range" min={min} max={max} value={valueMin}
+          aria-label={`${label} — от`}
+          onChange={(e) => onMin(Math.min(+e.target.value, valueMax))}
+          className="flex-1"
+        />
+        <input
+          type="range" min={min} max={max} value={valueMax}
+          aria-label={`${label} — до`}
+          onChange={(e) => onMax(Math.max(+e.target.value, valueMin))}
+          className="flex-1"
+        />
+      </div>
+    </div>
+  );
+}
+
+export default function FilterPanel({ open, filters, defaults, onChange, onClose }: Props) {
   const set = (patch: Partial<FilterState>) => onChange({ ...filters, ...patch });
 
   const toggleService = (s: string) => {
@@ -17,50 +53,59 @@ export default function FilterPanel({ filters, onChange, onClose }: Props) {
     set({ services: next });
   };
 
+  const isDirty = JSON.stringify(filters) !== JSON.stringify(defaults);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={onClose} />
-      <div className="relative w-full max-w-lg md:max-w-2xl lg:max-w-3xl bg-ink-700 border-t border-white/[0.07] rounded-t-2xl p-5 pb-[max(env(safe-area-inset-bottom),2rem)] max-h-[88vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal size={16} className="text-gold-500" />
-            <span className="text-sand-100 text-sm font-medium tracking-wide">Фильтры</span>
-          </div>
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      fullScreen
+      title={
+        <span className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#ff5a82] text-white">
+            <SlidersHorizontal size={16} />
+          </span>
+          Фильтры
+        </span>
+      }
+      footer={
+        <div className="flex gap-2">
+          {isDirty && (
+            <button
+              onClick={() => onChange({ ...defaults })}
+              className="flex h-13 shrink-0 items-center gap-2 rounded-xl bg-[#f1f1f1] px-4 font-semibold text-[#555] active:scale-[0.98]"
+            >
+              <RotateCcw size={16} /> Сбросить
+            </button>
+          )}
           <button
             onClick={onClose}
-            aria-label="Закрыть фильтры"
-            className="w-9 h-9 flex items-center justify-center -mr-1.5 rounded-lg text-sand-600 hover:text-sand-400 transition-colors"
+            className="h-13 flex-1 rounded-xl bg-[#ff5a82] text-base font-bold text-white transition-transform active:scale-[0.98]"
           >
-            <X size={18} />
+            Показать анкеты
           </button>
         </div>
+      }
+    >
+      <div className="divide-y divide-[#f0f0f0]">
+        <Range
+          label="Цена за час" unit="$" min={0} max={PRICE_FILTER_MAX}
+          valueMin={filters.priceMin} valueMax={filters.priceMax}
+          onMin={(v) => set({ priceMin: v })} onMax={(v) => set({ priceMax: v })}
+        />
+        <Range
+          label="Возраст" unit="лет" min={18} max={65}
+          valueMin={filters.ageMin} valueMax={filters.ageMax}
+          onMin={(v) => set({ ageMin: v })} onMax={(v) => set({ ageMax: v })}
+        />
+        <Range
+          label="Рост" unit="см" min={140} max={200}
+          valueMin={filters.heightMin} valueMax={filters.heightMax}
+          onMin={(v) => set({ heightMin: v })} onMax={(v) => set({ heightMax: v })}
+        />
 
-        <div className="mb-5">
-          <span className="text-[10px] text-sand-600 uppercase tracking-[0.12em] mb-3 block">
-            Возраст: {filters.ageMin}–{filters.ageMax}
-          </span>
-          <div className="flex gap-3">
-            <input type="range" min={18} max={65} value={filters.ageMin} aria-label="Минимальный возраст"
-              onChange={(e) => set({ ageMin: +e.target.value })} className="flex-1" />
-            <input type="range" min={18} max={65} value={filters.ageMax} aria-label="Максимальный возраст"
-              onChange={(e) => set({ ageMax: +e.target.value })} className="flex-1" />
-          </div>
-        </div>
-
-        <div className="mb-5">
-          <span className="text-[10px] text-sand-600 uppercase tracking-[0.12em] mb-3 block">
-            Рост: {filters.heightMin}–{filters.heightMax} см
-          </span>
-          <div className="flex gap-3">
-            <input type="range" min={140} max={200} value={filters.heightMin} aria-label="Минимальный рост"
-              onChange={(e) => set({ heightMin: +e.target.value })} className="flex-1" />
-            <input type="range" min={140} max={200} value={filters.heightMax} aria-label="Максимальный рост"
-              onChange={(e) => set({ heightMax: +e.target.value })} className="flex-1" />
-          </div>
-        </div>
-
-        <div className="mb-6">
-          <span className="text-[10px] text-sand-600 uppercase tracking-[0.12em] mb-3 block">Услуги</span>
+        <div className="py-5">
+          <span className="mb-3 block text-base font-bold">Услуги</span>
           <div className="flex flex-wrap gap-2">
             {AVAILABLE_SERVICES.map((s) => {
               const active = filters.services.includes(s);
@@ -68,10 +113,11 @@ export default function FilterPanel({ filters, onChange, onClose }: Props) {
                 <button
                   key={s}
                   onClick={() => toggleService(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs border transition-all ${
+                  aria-pressed={active}
+                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
                     active
-                      ? 'bg-gold-500/15 border-gold-500/30 text-gold-500'
-                      : 'bg-white/[0.03] border-white/[0.07] text-sand-400'
+                      ? 'bg-[#ff5a82] text-white shadow-[0_4px_14px_rgba(255,90,130,0.35)]'
+                      : 'bg-[#f1f1f1] text-[#4a4a4a] hover:bg-[#e8e8e8]'
                   }`}
                 >
                   {s}
@@ -80,14 +126,7 @@ export default function FilterPanel({ filters, onChange, onClose }: Props) {
             })}
           </div>
         </div>
-
-        <button
-          onClick={onClose}
-          className="w-full py-3.5 rounded-xl bg-gold-500 text-ink-900 font-semibold text-sm tracking-wide"
-        >
-          Применить
-        </button>
       </div>
-    </div>
+    </BottomSheet>
   );
 }

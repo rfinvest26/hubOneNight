@@ -1,212 +1,146 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Grid3X3, Search, Shield, Lock, Star } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { useAuth } from '@/contexts/AuthContext';
+import { ArrowRight, Headphones, Search, ShieldCheck, SlidersHorizontal, Star } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import AuthModal from '@/components/AuthModal';
 import Layout from '@/components/Layout';
+import MobileHeader from '@/components/MobileHeader';
+
+const QUICK_CATEGORIES = ['Эскорт', 'Массаж', 'Выезд', 'Апартаменты', 'Классика'];
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { session } = useAuth();
   const { city } = useApp();
-  const [showAuth, setShowAuth] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'catalog' | 'search' | null>(null);
-  const [searchCode, setSearchCode] = useState('');
-  const [showCodeSearch, setShowCodeSearch] = useState(false);
-  const [codeError, setCodeError] = useState('');
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
 
-  const go = (action: 'catalog' | 'search') => {
-    if (!session) {
-      setPendingAction(action);
-      setShowAuth(true);
+  const searchByCode = () => {
+    const value = code.trim().toUpperCase();
+    if (!value) {
+      setError('Введите код анкеты');
       return;
     }
-    if (action === 'catalog') navigate('/catalog');
-    else setShowCodeSearch(true);
-  };
-
-  const handleAuthSuccess = () => {
-    if (pendingAction === 'catalog') navigate('/catalog');
-    else if (pendingAction === 'search') setShowCodeSearch(true);
-    setPendingAction(null);
-  };
-
-  const handleCodeSearch = () => {
-    const code = searchCode.trim().toUpperCase();
-    if (!code) { setCodeError('Введите код модели'); return; }
-    navigate(`/model/${code}`);
+    navigate(`/model/${value}`);
   };
 
   return (
     <Layout>
-      <div className="flex flex-col relative overflow-x-hidden overflow-y-auto pb-8 text-left">
-        
-        {/* Hero Section */}
-        <section className="min-h-[75dvh] flex flex-col justify-center px-6 relative z-10 pt-10">
-          <motion.div
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.45, ease: "easeOut" }}
-            className="max-w-xs md:max-w-sm"
-          >
-            <p className="text-sand-300 text-[10px] tracking-widest uppercase mb-4">
-              {city ? `г. ${city}` : 'Premium Escort'}
-            </p>
-            <h1 className="text-4xl font-light text-sand-100 tracking-widest uppercase mb-8 leading-tight">
-              Исключительный<br />
-              <span className="text-gold-500 font-medium">Сервис</span>
-            </h1>
-            
-            <div className="space-y-4 mb-10">
-              <p className="text-sand-400 text-xs font-light leading-relaxed">
-                Закрытый клуб для ценителей. Мы предоставляем доступ только к верифицированным компаньонкам премиум-класса. 
-              </p>
-              <p className="text-sand-400 text-xs font-light leading-relaxed">
-                Абсолютная конфиденциальность, безопасность и соответствие высочайшим стандартам.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => go('catalog')}
-                className="flex items-center justify-center gap-2 flex-1 py-3.5 rounded-xl border border-gold-500/40 text-gold-500 hover:bg-gold-500/10 transition-colors text-[10px] font-medium tracking-widest uppercase"
-              >
-                <Grid3X3 size={14} />
-                Каталог
-              </button>
-              <button
-                onClick={() => go('search')}
-                className="flex items-center justify-center gap-2 flex-1 py-3.5 rounded-xl border border-white/[0.1] text-sand-300 hover:bg-white/[0.05] transition-colors text-[10px] font-medium tracking-widest uppercase"
-              >
-                <Search size={14} />
-                Код
-              </button>
-            </div>
-          </motion.div>
-        </section>
-
-        {/* How it works */}
-        <section className="px-6 py-12 border-t border-white/[0.04]">
-          <h2 className="text-sand-100 text-lg font-light tracking-[0.15em] uppercase mb-8">Как это работает</h2>
-          <div className="space-y-8">
-            <div className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className="w-8 h-8 rounded-full border border-gold-500/30 flex items-center justify-center text-gold-500 text-xs font-medium">1</div>
-                <div className="w-[1px] h-full min-h-[30px] bg-white/[0.05] my-2" />
-              </div>
-              <div className="pb-4">
-                <h3 className="text-sand-200 text-sm font-medium mb-1.5 uppercase tracking-wide">Выбор в каталоге</h3>
-                <p className="text-sand-500 text-xs font-light leading-relaxed">Ознакомьтесь с верифицированными анкетами в вашем городе. Вы можете использовать удобные фильтры для точного поиска.</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className="w-8 h-8 rounded-full border border-gold-500/30 flex items-center justify-center text-gold-500 text-xs font-medium">2</div>
-                <div className="w-[1px] h-full min-h-[30px] bg-white/[0.05] my-2" />
-              </div>
-              <div className="pb-4">
-                <h3 className="text-sand-200 text-sm font-medium mb-1.5 uppercase tracking-wide">Оформление заявки</h3>
-                <p className="text-sand-500 text-xs font-light leading-relaxed">Выберите дату, укажите место и отправьте запрос. Вся информация передается по защищенному каналу.</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className="w-8 h-8 rounded-full border border-gold-500/30 flex items-center justify-center text-gold-500 text-xs font-medium">3</div>
-              </div>
-              <div>
-                <h3 className="text-sand-200 text-sm font-medium mb-1.5 uppercase tracking-wide">Подтверждение в чате</h3>
-                <p className="text-sand-500 text-xs font-light leading-relaxed">Наш консьерж-сервис свяжется с вами в закрытом чате для уточнения деталей времени и подтверждения встречи.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Guarantees */}
-        <section className="px-6 py-12 bg-ink-800 border-y border-white/[0.04]">
-          <h2 className="text-sand-100 text-lg font-light tracking-[0.15em] uppercase mb-8">Наши гарантии</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-ink-600 border border-white/[0.03] p-5 rounded-2xl">
-              <Lock size={18} className="text-gold-500 mb-4" />
-              <h3 className="text-sand-200 text-sm font-medium mb-2 uppercase tracking-wide">Строгая анонимность</h3>
-              <p className="text-sand-500 text-xs font-light leading-relaxed">Мы не храним историю ваших заказов и личные данные в открытом виде. Полное шифрование переписки.</p>
-            </div>
-            <div className="bg-ink-600 border border-white/[0.03] p-5 rounded-2xl">
-              <Star size={18} className="text-gold-500 mb-4" />
-              <h3 className="text-sand-200 text-sm font-medium mb-2 uppercase tracking-wide">100% Верификация</h3>
-              <p className="text-sand-500 text-xs font-light leading-relaxed">Каждая анкета проходит ручную модерацию. Фотографии строго соответствуют реальности.</p>
-            </div>
-            <div className="bg-ink-600 border border-white/[0.03] p-5 rounded-2xl">
-              <Shield size={18} className="text-gold-500 mb-4" />
-              <h3 className="text-sand-200 text-sm font-medium mb-2 uppercase tracking-wide">Безопасность встреч</h3>
-              <p className="text-sand-500 text-xs font-light leading-relaxed">Мы гарантируем безопасность обеих сторон. Клуб оставляет за собой право отказать в обслуживании без объяснения причин.</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Rules */}
-        <section className="px-6 py-12">
-          <h2 className="text-sand-100 text-lg font-light tracking-[0.15em] uppercase mb-6">Правила клуба</h2>
-          <ul className="space-y-4 text-sand-400 text-xs font-light leading-relaxed list-disc list-outside pl-4">
-            <li>Взаимное уважение и вежливое общение в чате и на встречах.</li>
-            <li>Неразглашение информации о компаньонках третьим лицам.</li>
-            <li>Запрет на любую фото- и видеосъемку без обоюдного согласия.</li>
-            <li>Клуб не оказывает услуги лицам в состоянии сильного алкогольного опьянения.</li>
-          </ul>
-        </section>
-
-        {/* Footer */}
-        <footer className="text-center py-8">
-          <div className="w-10 h-[1px] bg-gold-500/30 mx-auto mb-6" />
-          <p className="text-sand-600 text-[9px] tracking-[0.3em] uppercase">© {new Date().getFullYear()} OneNight Premium</p>
-        </footer>
-
-      </div>
-
-      {showCodeSearch && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label="Поиск по коду">
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
-            onClick={() => setShowCodeSearch(false)}
-          />
-          <motion.div
-            initial={{ y: "100%" }} animate={{ y: 0 }} transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="relative w-full max-w-lg md:max-w-2xl lg:max-w-3xl bg-ink-600 border-t border-gold-500/20 rounded-t-3xl p-8 pb-[max(env(safe-area-inset-bottom),2rem)] shadow-[0_-10px_40px_rgba(0,0,0,0.8)]"
-          >
-            <div className="w-12 h-1 bg-white/[0.1] rounded-full mx-auto mb-8" />
-            <p className="text-xs text-gold-500 uppercase tracking-[0.2em] mb-6 font-medium text-center">Поиск по коду</p>
-            <div className="space-y-5">
-              <label htmlFor="home-code-search" className="sr-only">Код модели</label>
-              <input
-                id="home-code-search"
-                type="text"
-                placeholder="ON-XXXX"
-                value={searchCode}
-                onChange={(e) => { setSearchCode(e.target.value); setCodeError(''); }}
-                onKeyDown={(e) => e.key === 'Enter' && handleCodeSearch()}
-                className="w-full bg-ink-925 border border-white/[0.08] rounded-2xl px-5 py-4 text-center text-lg text-sand-100 placeholder-sand-600 outline-none focus:border-gold-500/50 focus:shadow-[0_0_15px_rgba(196,163,90,0.1)] transition-all uppercase tracking-[0.3em]"
-                autoFocus
-              />
-              {codeError && <p role="alert" className="text-red-400/80 text-xs text-center">{codeError}</p>}
-              <button
-                onClick={handleCodeSearch}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-gold-500 to-gold-400 text-ink-900 font-bold text-xs tracking-[0.15em] uppercase hover:opacity-90 transition-opacity"
-              >
-                Найти анкету
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {showAuth && (
-        <AuthModal
-          onClose={() => { setShowAuth(false); setPendingAction(null); }}
-          onSuccess={handleAuthSuccess}
+      <div className="flex min-h-screen flex-col bg-[#202020]">
+        <MobileHeader
+          right={
+            <button
+              onClick={() => navigate('/chat/support')}
+              aria-label="Поддержка"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white active:scale-95"
+            >
+              <Headphones size={16} />
+            </button>
+          }
         />
-      )}
+
+        <main className="flex-1 rounded-t-[22px] bg-white text-[#202020] md:rounded-none">
+          <div className="mx-auto max-w-[1200px]">
+            {/* Hero: главное действие — открыть каталог */}
+            <section className="px-4 pt-6 pb-2 md:px-6 md:py-10">
+              <div className="hidden text-sm text-[#ababab] md:block">Главная <span className="px-2">•</span> {city || 'Москва'}</div>
+            <h1 className="md:mt-4 text-[28px] font-black leading-tight md:text-5xl">
+              Проверенные анкеты в городе {city || 'Москва'}
+            </h1>
+            <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-[#666] md:text-lg">
+              Каталог, заказы и поддержка в одном профиле. Выберите анкету, оформите заявку — менеджер подтвердит детали в чате.
+            </p>
+
+            <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
+              <button
+                onClick={() => navigate('/catalog')}
+                className="flex h-13 items-center justify-center gap-2 rounded-xl bg-[#ff5a82] px-7 text-base font-bold text-white shadow-[0_8px_24px_rgba(255,90,130,0.35)] transition-transform active:scale-[0.98] sm:flex-none"
+              >
+                <SlidersHorizontal size={17} /> Открыть каталог
+              </button>
+              <button
+                onClick={() => navigate('/chat/support')}
+                className="flex h-13 items-center justify-center gap-2 rounded-xl bg-[#f1f1f1] px-6 font-semibold text-[#333] transition-transform active:scale-[0.98] sm:flex-none"
+              >
+                <Headphones size={17} /> Поддержка
+              </button>
+            </div>
+
+            {/* Быстрые категории — сразу в отфильтрованный каталог */}
+            <div className="mt-5 flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
+              {QUICK_CATEGORIES.map((service) => (
+                <button
+                  key={service}
+                  onClick={() => navigate(`/catalog?service=${encodeURIComponent(service)}`)}
+                  className="h-10 shrink-0 rounded-full bg-[#f1f1f1] px-4 text-sm font-semibold text-[#444] transition-colors active:scale-95 hover:bg-[#ffe4ed] hover:text-[#ff4f80]"
+                >
+                  {service}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* Поиск по коду анкеты */}
+          <section className="px-4 py-5 md:px-6">
+            <div className="rounded-2xl bg-[#f7f7f7] p-4 md:p-5">
+              <p className="text-base font-extrabold">Есть код анкеты?</p>
+              <p className="mt-1 text-sm text-[#888]">Введите код из объявления, чтобы открыть анкету напрямую.</p>
+              <div className="mt-3 flex gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9d9d9d]" />
+                  <input
+                    value={code}
+                    onChange={(e) => { setCode(e.target.value); setError(''); }}
+                    onKeyDown={(e) => e.key === 'Enter' && searchByCode()}
+                    placeholder="Например: ON-7F2K"
+                    className="h-12 w-full rounded-xl bg-white pl-11 pr-4 uppercase text-[#202020] outline-none ring-1 ring-transparent focus:ring-[#ff5a82]"
+                  />
+                </div>
+                <button onClick={searchByCode} className="flex h-12 shrink-0 items-center gap-1.5 rounded-xl bg-[#202020] px-5 font-semibold text-white active:scale-[0.98]">
+                  Найти <ArrowRight size={16} />
+                </button>
+              </div>
+              {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+            </div>
+          </section>
+
+          {/* Преимущества — спокойный статичный блок без «виджетов» */}
+          <section className="px-4 pb-6 md:px-6 md:pb-8">
+            <div className="divide-y divide-[#efefef] border-y border-[#efefef]">
+              {[
+                { icon: ShieldCheck, title: 'Проверенные анкеты', text: 'Карточки проходят модерацию, фото соответствуют реальности.' },
+                { icon: Headphones, title: 'Поддержка по каждому заказу', text: 'Заявки, подписки и оплата подтверждаются менеджером в чате.' },
+                { icon: Star, title: 'Всё в одном профиле', text: 'Фильтры, избранное, чаты и статусы заказов связаны между собой.' },
+              ].map(({ icon: Icon, title, text }) => (
+                <div key={title} className="flex gap-4 py-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#ffe4ed] text-[#ff5a82]">
+                    <Icon size={19} />
+                  </span>
+                  <div>
+                    <h2 className="text-[16px] font-extrabold">{title}</h2>
+                    <p className="mt-0.5 text-sm leading-relaxed text-[#777]">{text}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* CTA-блок */}
+          <section className="px-4 pb-24 md:px-6 md:pb-12">
+            <div className="rounded-2xl bg-[#202020] p-5 text-white md:flex md:items-center md:justify-between md:p-6">
+              <div>
+                <h2 className="text-xl font-black md:text-2xl">Нужна помощь с выбором?</h2>
+                <p className="mt-1.5 text-sm text-white/65 md:text-base">Менеджер подберёт анкету под ваши пожелания и оформит заказ.</p>
+              </div>
+              <button
+                onClick={() => navigate('/chat/support')}
+                className="mt-4 h-12 w-full rounded-xl bg-[#4773d8] px-6 font-semibold transition-transform active:scale-[0.98] md:mt-0 md:w-auto"
+              >
+                Написать в поддержку
+              </button>
+            </div>
+          </section>
+          </div>
+        </main>
+      </div>
     </Layout>
   );
 }

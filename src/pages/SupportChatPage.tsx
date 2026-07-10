@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Send, Headphones, Paperclip, Loader2 } from 'lucide-react';
+import { ArrowLeft, Headphones, Loader2, Paperclip, Send, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { SupportMessage } from '@/types';
+import { ensureOpenSupportChat } from '@/lib/supportChat';
+import AuthModal from '@/components/AuthModal';
 import ChatBubble from '@/components/ChatBubble';
 import Layout from '@/components/Layout';
-import AuthModal from '@/components/AuthModal';
 import OnlineDot from '@/components/OnlineDot';
 
 export default function SupportChatPage() {
@@ -19,12 +20,17 @@ export default function SupportChatPage() {
   const [initializing, setInitializing] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const realtimeOk = useRef(false);
 
   useEffect(() => {
-    if (!session) { setShowAuth(true); setInitializing(false); return; }
+    if (!session) {
+      setShowAuth(true);
+      setInitializing(false);
+      return;
+    }
     initChat();
   }, [session]);
 
@@ -42,34 +48,39 @@ export default function SupportChatPage() {
 
   const initChat = async () => {
     if (!session) return;
-    const { data: existing } = await supabase
+    const { data, error: chatError } = await supabase
       .from('support_chats')
       .select('id')
       .eq('client_id', session.id)
+      .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (existing) setChatId(existing.id);
+    if (chatError) console.error('Support chat init error:', chatError);
+    if (data?.id) setChatId(data.id);
     setInitializing(false);
   };
 
   const ensureChatId = async (): Promise<string | null> => {
     if (chatId) return chatId;
     if (!session) return null;
-    const insertData: Record<string, unknown> = { client_id: session.id, status: 'open' };
-    if (session.worker_id) insertData.worker_id = session.worker_id;
-    const { data } = await supabase.from('support_chats').insert(insertData).select('id').single();
-    if (data) { setChatId(data.id); return data.id; }
-    return null;
+    const id = await ensureOpenSupportChat(session.id, session.worker_id);
+    if (!id) {
+      setError('Не удалось открыть чат поддержки. Попробуйте ещё раз.');
+      return null;
+    }
+    setChatId(id);
+    return id;
   };
 
   const fetchMessages = async () => {
     if (!chatId) return;
-    const { data } = await supabase
+    const { data, error: msgError } = await supabase
       .from('support_messages')
       .select('*')
       .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
+    if (msgError) console.error('Support messages fetch error:', msgError);
     setMessages(data ?? []);
   };
 
@@ -87,81 +98,106 @@ export default function SupportChatPage() {
     return () => { supabase.removeChannel(channel); };
   };
 
+  const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  };
+
   const sendMessage = async (e?: React.FormEvent, attachFile?: File) => {
     if (e) e.preventDefault();
     const trimmed = text.trim();
     if ((!trimmed && !attachFile) || sending || !session) return;
+    setError('');
     setSending(true);
     if (!attachFile) setText('');
 
     const cid = await ensureChatId();
     if (!cid) { setSending(false); return; }
 
-    let file_url = null;
+    let file_url: string | null = null;
     if (attachFile) {
       setUploading(true);
-      const ext = attachFile.name.split('.').pop();
+      const ext = attachFile.name.split('.').pop() || 'file';
       const path = `support/${session.id}/${Date.now()}.${ext}`;
-      await supabase.storage.from('public_photos').upload(path, attachFile);
-      const { data } = supabase.storage.from('public_photos').getPublicUrl(path);
-      file_url = data.publicUrl;
+      const { error: uploadError } = await supabase.storage.from('public_photos').upload(path, attachFile);
+      if (uploadError) {
+        console.error('Support file upload error:', uploadError);
+        setError('Не удалось загрузить файл.');
+        setUploading(false);
+        setSending(false);
+        return;
+      }
+      file_url = supabase.storage.from('public_photos').getPublicUrl(path).data.publicUrl;
       setUploading(false);
     }
 
     const newMsg: SupportMessage = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       chat_id: cid,
       sender: 'client',
       text: trimmed,
       file_url,
       tg_message_id: null,
       is_read: false,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
     };
-
     setMessages((prev) => [...prev, newMsg]);
 
-    await supabase.from('support_messages').insert({ 
+    const { error: insertError } = await supabase.from('support_messages').insert({
       id: newMsg.id,
-      chat_id: cid, 
-      sender: 'client', 
-      text: trimmed, 
+      chat_id: cid,
+      sender: 'client',
+      text: trimmed,
       file_url,
-      is_read: false 
+      is_read: false,
     });
+    if (insertError) {
+      console.error('Support message insert error:', insertError);
+      setError('Сообщение не отправлено. Попробуйте ещё раз.');
+      setMessages((prev) => prev.filter((msg) => msg.id !== newMsg.id));
+    }
     setSending(false);
   };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      sendMessage(undefined, file);
-    }
+    if (file) sendMessage(undefined, file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   };
 
   if (!session) {
     return (
-      <Layout hideNav>
-        <div className="min-h-dvh flex flex-col items-center justify-center px-6 text-center">
-          <Headphones size={28} className="text-ink-200 mb-4" />
-          <p className="text-sand-400 text-sm mb-4">Войдите, чтобы написать в поддержку</p>
-          <button onClick={() => navigate(-1)} className="text-gold-500 text-xs tracking-widest uppercase">Назад</button>
+      <Layout>
+        <div className="min-h-[70dvh] bg-white text-[#202020] flex items-center justify-center px-5">
+          <div className="max-w-sm text-center">
+            <Headphones size={34} className="mx-auto mb-4 text-[#ff5a82]" />
+            <h1 className="text-3xl font-black">Войдите, чтобы написать в поддержку</h1>
+            <button onClick={() => setShowAuth(true)} className="mt-6 h-12 rounded-lg bg-[#ff5a82] px-6 font-semibold text-white">Войти</button>
+          </div>
+          {showAuth && <AuthModal onClose={() => navigate(-1)} onSuccess={() => setShowAuth(false)} />}
         </div>
-        {showAuth && <AuthModal onClose={() => navigate(-1)} onSuccess={() => setShowAuth(false)} />}
       </Layout>
     );
   }
 
   if (initializing) {
     return (
-      <Layout hideNav>
-        <div className="min-h-dvh flex items-center justify-center">
-          <div className="w-5 h-5 rounded-full border border-gold-500/40 border-t-gold-500 animate-spin" />
+      <Layout>
+        <div className="min-h-[70dvh] bg-white flex items-center justify-center">
+          <div className="h-9 w-9 animate-spin rounded-full border border-[#ff5a82]/25 border-t-[#ff5a82]" />
         </div>
       </Layout>
     );
@@ -169,72 +205,84 @@ export default function SupportChatPage() {
 
   return (
     <Layout hideNav>
-      <div className="flex flex-col h-dvh">
-        <div className="pt-safe bg-ink-900/95 backdrop-blur-xl border-b border-white/[0.04] shrink-0">
-          <div className="flex items-center gap-3 px-4 py-3">
-            <button
-              onClick={() => navigate(-1)}
-              aria-label="Назад"
-              className="w-10 h-10 flex items-center justify-center rounded-lg bg-white/[0.04] border border-white/[0.07] text-sand-400 active:scale-90 transition-transform"
-            >
-              <ArrowLeft size={16} />
+      <div className="flex h-dvh flex-col bg-[#202020] md:bg-[#f6f6f6]">
+        <header className="shrink-0 bg-white text-[#202020] border-b border-[#e8e8e8] pt-safe">
+          <div className="mx-auto flex max-w-[1040px] items-center gap-3 px-4 py-3">
+            <button onClick={() => navigate(-1)} aria-label="Назад" className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f1f1f1] active:scale-95">
+              <ArrowLeft size={17} />
             </button>
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-lg bg-gold-500/10 border border-gold-500/15 flex items-center justify-center">
-                <Headphones size={15} className="text-gold-500" />
-              </div>
-              <div>
-                <p className="font-medium text-sm text-sand-100">Поддержка</p>
-                <p className="text-xs text-gold-500 flex items-center gap-1.5"><OnlineDot />онлайн</p>
-              </div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff5a82] text-white">
+              <Headphones size={19} />
+            </div>
+            <div>
+              <p className="font-black">Поддержка</p>
+              <p className="flex items-center gap-1.5 text-sm text-[#4773d8]"><OnlineDot /> онлайн</p>
             </div>
           </div>
-        </div>
+        </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-6 h-px bg-gold-500/25 mx-auto mb-4" />
-              <p className="text-sm text-sand-400">Напишите нам</p>
-              <p className="text-xs text-sand-600 mt-1">Ответим в ближайшее время</p>
-            </div>
-          )}
-          {messages.map((msg) => (
-            <ChatBubble key={msg.id} message={msg} isOwn={msg.sender === 'client'} />
-          ))}
-          <div ref={bottomRef} />
-        </div>
-
-        <div className="shrink-0 px-4 py-3 bg-ink-900 border-t border-white/[0.04] pb-safe">
-          <div className="flex items-end gap-2">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending || uploading}
-              aria-label="Прикрепить файл"
-              className="w-11 h-11 shrink-0 rounded-xl bg-white/[0.04] border border-white/[0.07] flex items-center justify-center text-sand-400 hover:text-gold-500 hover:border-gold-500/30 active:scale-90 transition-all disabled:opacity-50"
-            >
-              {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
-            </button>
-            <input type="file" ref={fileInputRef} onChange={handleFile} className="hidden" accept="image/*,application/pdf" aria-label="Файл вложения" />
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={handleKey}
-              placeholder="Сообщение поддержке..."
-              aria-label="Сообщение поддержке"
-              rows={1}
-              className="flex-1 bg-white/[0.04] border border-white/[0.07] rounded-xl px-4 py-3 text-sm text-sand-100 placeholder-sand-600 outline-none focus:border-gold-500/30 resize-none max-h-32 transition-all"
-            />
-            <button
-              onClick={() => sendMessage()}
-              disabled={!text.trim() || sending}
-              aria-label="Отправить сообщение"
-              className="w-11 h-11 shrink-0 rounded-xl bg-gold-500 flex items-center justify-center active:scale-90 disabled:opacity-30 transition-all"
-            >
-              <Send size={15} className="text-ink-900" />
-            </button>
+        <main className="flex min-h-0 w-full flex-1 flex-col bg-[#f6f6f6]">
+          <div className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col px-4 md:px-6">
+          <div className="flex-1 overflow-y-auto py-5">
+            {messages.length === 0 && (
+              <div className="mx-auto mt-16 max-w-md rounded-[18px] border border-[#e5e5e5] bg-white p-6 text-center text-[#202020]">
+                <ShieldCheck size={28} className="mx-auto mb-3 text-[#ff5a82]" />
+                <p className="text-xl font-black">Напишите в поддержку</p>
+                <p className="mt-2 text-sm text-[#777]">Здесь подтверждаются заказы, подписки и вопросы по оплате.</p>
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  {['Статус моего заказа', 'Как проходит оплата?', 'Хочу оформить подписку'].map((question) => (
+                    <button
+                      key={question}
+                      type="button"
+                      onClick={() => setText(question)}
+                      className="rounded-lg bg-[#f1f1f1] px-3.5 py-2 text-sm font-medium text-[#444] transition-colors hover:bg-[#ffe4ed] hover:text-[#ff4f80]"
+                    >
+                      {question}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {messages.map((msg) => (
+              <ChatBubble key={msg.id} message={msg} isOwn={msg.sender === 'client'} />
+            ))}
+            <div ref={bottomRef} />
           </div>
-        </div>
+
+          <form onSubmit={sendMessage} className="shrink-0 border-t border-[#e5e5e5] bg-white py-3 pb-safe">
+            {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+            <div className="flex items-end gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending || uploading}
+                aria-label="Прикрепить файл"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#dedede] bg-[#f7f7f7] text-[#555] disabled:opacity-50"
+              >
+                {uploading ? <Loader2 size={17} className="animate-spin" /> : <Paperclip size={17} />}
+              </button>
+              <input type="file" ref={fileInputRef} onChange={handleFile} className="hidden" accept="image/*,application/pdf" aria-label="Файл вложения" />
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={handleKey}
+                placeholder="Сообщение поддержке..."
+                aria-label="Сообщение поддержке"
+                rows={1}
+                className="max-h-32 min-h-11 flex-1 resize-none rounded-xl border border-[#dedede] bg-[#f7f7f7] px-4 py-3 text-sm text-[#202020] outline-none focus:border-[#ff5a82]"
+              />
+              <button
+                type="submit"
+                disabled={!text.trim() || sending}
+                aria-label="Отправить сообщение"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#4773d8] text-white disabled:opacity-40"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </form>
+          </div>
+        </main>
       </div>
     </Layout>
   );

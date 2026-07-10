@@ -14,7 +14,7 @@ export default function VerifiedBadge({ className = '', size = 13 }: Props) {
         <motion.path
           d="M12 2 19 5.5V11.5C19 16 16 19.5 12 21C8 19.5 5 16 5 11.5V5.5L12 2Z"
           fill="currentColor"
-          className="text-gold-500"
+          className="text-[#52c7ec]"
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.3 }}

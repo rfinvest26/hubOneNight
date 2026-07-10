@@ -8,6 +8,7 @@ import LandingPage from '@/pages/LandingPage';
 import HomePage from '@/pages/HomePage';
 import CatalogPage from '@/pages/CatalogPage';
 import ModelPage from '@/pages/ModelPage';
+import OnlyModelPage from '@/pages/OnlyModelPage';
 import ProfilePage from '@/pages/ProfilePage';
 import OrderPage from '@/pages/OrderPage';
 import ModelChatPage from '@/pages/ModelChatPage';
@@ -32,6 +33,7 @@ function RouterSetup() {
       <Route path="/home" element={<HomePage />} />
       <Route path="/catalog" element={<CatalogPage />} />
       <Route path="/model/:code" element={<ModelPage />} />
+      <Route path="/only/:code" element={<OnlyModelPage />} />
       <Route path="/profile" element={<ProfilePage />} />
       <Route path="/order/:modelId" element={<OrderPage />} />
       <Route path="/chat/model/:modelId" element={<ModelChatPage />} />

@@ -1,44 +1,113 @@
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Home, Grid3X3, User, MessageCircle } from 'lucide-react';
+import { useState } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { BadgeCheck, Headphones, Heart, MapPin, Search, SlidersHorizontal, User } from 'lucide-react';
+import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 
-const links = [
-  { icon: Home, label: 'Главная', path: '/home' },
-  { icon: Grid3X3, label: 'Каталог', path: '/catalog' },
-  { icon: User, label: 'Профиль', path: '/profile' },
-  { icon: MessageCircle, label: 'Поддержка', path: '/chat/support' },
+const categories: Array<{ label: string; service?: string }> = [
+  { label: 'Все модели' },
+  { label: 'Эскорт', service: 'Эскорт' },
+  { label: 'Массаж', service: 'Массаж' },
+  { label: 'Выезд', service: 'Выезд' },
+  { label: 'Апартаменты', service: 'Апартаменты' },
+  { label: 'Классика', service: 'Классика' },
 ];
 
 export default function TopNav() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const [searchParams] = useSearchParams();
+  const { city } = useApp();
+  const { session } = useAuth();
+  const [query, setQuery] = useState(searchParams.get('q') ?? '');
+
+  const submitSearch = () => {
+    const q = query.trim();
+    navigate(q ? `/catalog?q=${encodeURIComponent(q)}` : '/catalog');
+  };
+
+  const activeService = pathname.startsWith('/catalog') ? searchParams.get('service') : null;
 
   return (
-    <nav className="hidden md:flex sticky top-0 z-50 h-16 items-center justify-between px-8 bg-ink-900/95 backdrop-blur-xl border-b border-white/[0.05] shrink-0">
-      <button
-        onClick={() => navigate('/home')}
-        className="text-sm font-light tracking-[0.25em] uppercase text-sand-100 hover:text-gold-400 transition-colors"
-      >
-        One<span className="text-gold-500 font-medium">Night</span>
-      </button>
-
-      <div className="flex items-center gap-1">
-        {links.map(({ icon: Icon, label, path }) => {
-          const active = pathname === path || (path !== '/home' && pathname.startsWith(path));
-          return (
-            <button
-              key={path}
-              onClick={() => navigate(path)}
-              aria-current={active ? 'page' : undefined}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium tracking-widest uppercase transition-all ${
-                active ? 'text-gold-500 bg-gold-500/10' : 'text-sand-400 hover:text-sand-100 hover:bg-white/[0.04]'
-              }`}
-            >
-              <Icon size={15} strokeWidth={active ? 2 : 1.5} />
-              {label}
-            </button>
-          );
-        })}
+    <header className="hidden md:block sticky top-0 z-50 bg-[#202020] text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)]">
+      <div className="h-9 bg-gradient-to-r from-[#fb4b93] via-[#ff5f76] to-[#8bc8ef]">
+        <div className="mx-auto flex h-full max-w-[1040px] items-center justify-between px-5 text-sm">
+          <button onClick={() => navigate('/')} className="flex items-center gap-1.5 opacity-95">
+            <MapPin size={15} />
+            <span>{city || 'Москва'}</span>
+          </button>
+          <div className="flex items-center gap-2 font-bold uppercase tracking-wide">
+            <BadgeCheck size={18} className="fill-sky-300 text-white" />
+            Только проверенные анкеты
+            <BadgeCheck size={18} className="fill-sky-300 text-white" />
+          </div>
+          <span className="text-sm font-semibold">RU</span>
+        </div>
       </div>
-    </nav>
+
+      <div className="mx-auto max-w-[1040px] px-5 py-4">
+        <div className="flex items-center gap-4">
+          <button onClick={() => navigate('/catalog')} className="mr-1 text-5xl font-black leading-none tracking-tight">
+            One<span className="text-[#ff5a82]">Night</span>
+          </button>
+          <div className="relative h-12 min-w-[260px] flex-1 max-w-sm">
+            <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/55" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && submitSearch()}
+              className="h-full w-full rounded-lg bg-white/10 pl-12 pr-4 text-base text-white outline-none placeholder:text-white/55 focus:bg-white/14 focus:ring-2 focus:ring-[#ff5a82]"
+              placeholder="Поиск по имени, коду"
+              aria-label="Поиск"
+            />
+          </div>
+          <button
+            onClick={() => navigate('/chat/support')}
+            className="h-12 rounded-lg border-2 border-[#ff5a82] px-5 text-[#ff5a82] font-semibold inline-flex items-center gap-2 hover:bg-[#ff5a82]/10 transition-colors"
+          >
+            <Headphones size={18} /> Поддержка
+          </button>
+          <button
+            onClick={() => navigate('/profile?tab=favorites')}
+            className="ml-auto h-12 w-12 rounded-lg bg-white/10 inline-flex items-center justify-center hover:bg-white/15 transition-colors"
+            aria-label="Избранное"
+          >
+            <Heart size={20} />
+          </button>
+          <button
+            onClick={() => navigate('/profile')}
+            className="h-12 rounded-lg bg-[#ff5a82] px-5 font-semibold inline-flex items-center gap-2 hover:bg-[#f04a74] transition-colors"
+          >
+            <User size={18} />
+            {session ? 'Профиль' : 'Войти'}
+          </button>
+        </div>
+
+        <div className="mt-5 flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
+          <button
+            onClick={() => navigate('/catalog?filters=1')}
+            className="h-11 shrink-0 rounded-lg border border-[#ff5a82] bg-[#ff5a82] px-4 text-base font-medium text-white inline-flex items-center gap-2"
+          >
+            <SlidersHorizontal size={16} /> Фильтр
+          </button>
+          {categories.map(({ label, service }) => {
+            const active = pathname.startsWith('/catalog') && (service ? activeService === service : !activeService);
+            return (
+              <button
+                key={label}
+                onClick={() => navigate(service ? `/catalog?service=${encodeURIComponent(service)}` : '/catalog')}
+                className={`h-11 shrink-0 rounded-lg border px-4 text-base font-medium transition-colors ${
+                  active
+                    ? 'border-white bg-white text-[#202020]'
+                    : 'border-white/75 text-white hover:border-[#ff5a82] hover:text-[#ff8ca9]'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </header>
   );
 }

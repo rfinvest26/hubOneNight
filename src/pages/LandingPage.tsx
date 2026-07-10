@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, ChevronRight, ShieldCheck, Star, Heart, Clock } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronRight, Headphones, MapPin, Search, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useApp } from '@/contexts/AppContext';
 import { COUNTRY_LABELS } from '@/types';
 import { getCitySuggestions } from '@/data/cities';
@@ -18,9 +18,7 @@ export default function LandingPage() {
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (city) {
-      navigate('/home', { replace: true });
-    }
+    if (city) navigate('/home', { replace: true });
   }, [city, navigate]);
 
   useEffect(() => {
@@ -31,10 +29,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (
-        !inputRef.current?.contains(e.target as Node) &&
-        !suggestionsRef.current?.contains(e.target as Node)
-      ) {
+      if (!inputRef.current?.contains(e.target as Node) && !suggestionsRef.current?.contains(e.target as Node)) {
         setIsFocused(false);
         setShowSuggestions(false);
       }
@@ -43,8 +38,8 @@ export default function LandingPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const selectCity = (c: string) => {
-    setCityInput(c);
+  const selectCity = (nextCity: string) => {
+    setCityInput(nextCity);
     setIsFocused(false);
     setShowSuggestions(false);
     setError('');
@@ -53,99 +48,93 @@ export default function LandingPage() {
   const handleContinue = () => {
     const trimmed = cityInput.trim();
     if (!trimmed) {
-      setError('Укажите город');
+      setError('Введите город, чтобы открыть каталог.');
       return;
     }
     setCity(trimmed);
     navigate('/home');
   };
 
-  const countryLabel = country ? (COUNTRY_LABELS[country] ?? country) : null;
+  const countryLabel = country ? (COUNTRY_LABELS[country] ?? country) : 'Россия';
 
   return (
-    <div className="min-h-dvh bg-ink-900 flex flex-col relative overflow-x-hidden overflow-y-auto pb-safe">
-      {/* Glow Effects */}
-      <div className="absolute top-[-10%] left-[-20%] w-[70vw] h-[70vw] bg-gold-500/5 blur-[120px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-20%] w-[70vw] h-[70vw] bg-gold-500/5 blur-[120px] rounded-full pointer-events-none" />
-
-      {/* Hero Section */}
-      <section className="min-h-[85dvh] flex flex-col items-center justify-center px-6 relative z-10 py-12">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
-          className="w-full max-w-sm md:max-w-md"
-        >
-          <div className="text-center mb-10">
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.6 }}
-              className="w-12 h-[1px] bg-gradient-to-r from-transparent via-gold-500/80 to-transparent mx-auto mb-8"
-            />
-            <h1 className="text-5xl font-light text-sand-100 tracking-[0.25em] uppercase mb-4 drop-shadow-2xl">
-              One<span className="text-gold-500 font-medium">Night</span>
-            </h1>
-            <p className="text-gold-500 text-[10px] tracking-[0.35em] font-medium uppercase mb-6 drop-shadow-md">
-              {countryLabel ? `${countryLabel} • Premium Escort` : 'Premium Escort Club'}
-            </p>
-            <p className="text-sand-400 text-[13px] leading-relaxed font-light mx-auto max-w-[260px]">
-              Эксклюзивный доступ к лучшим компаньонкам вашего города.
-            </p>
+    <div className="flex min-h-dvh flex-col bg-[#202020] text-[#202020]">
+      <header className="bg-[#202020] text-white">
+        <div className="h-10 bg-gradient-to-r from-[#fb4b93] via-[#ff5f76] to-[#8bc8ef]">
+          <div className="mx-auto flex h-full max-w-[1040px] items-center justify-center px-5 text-sm font-bold uppercase tracking-wide">
+            <ShieldCheck size={17} className="mr-2 fill-sky-300 text-white" />
+            Только проверенные анкеты
           </div>
+        </div>
+        <div className="mx-auto flex max-w-[1040px] items-center justify-between px-5 py-5">
+          <button onClick={() => navigate('/catalog')} className="text-4xl font-black tracking-tight">
+            One<span className="text-[#ff5a82]">Night</span>
+          </button>
+          <button onClick={() => navigate('/chat/support')} className="hidden h-11 items-center gap-2 rounded-lg border border-white/20 px-4 font-semibold md:inline-flex">
+            <Headphones size={17} /> Поддержка
+          </button>
+        </div>
+      </header>
 
-          <div className="bg-gradient-to-b from-ink-600/80 to-ink-800/90 backdrop-blur-xl border border-white/[0.06] p-6 rounded-[2rem] shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
-            <h2 className="text-sand-100 text-center mb-6 text-xs tracking-[0.2em] uppercase font-medium">Выбор города</h2>
-            <div className="space-y-4">
+      <main className="flex-1 rounded-t-[22px] bg-white md:rounded-none">
+        <section className="mx-auto grid max-w-[1200px] gap-8 px-5 py-8 md:grid-cols-[minmax(0,1fr)_340px] md:px-6 md:py-12">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.28 }}>
+            <div className="text-sm text-[#ababab]">Главная <span className="px-2">•</span> {countryLabel}</div>
+            <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight md:text-5xl">
+              Выберите город и откройте каталог анкет
+            </h1>
+            <p className="mt-4 max-w-2xl text-lg leading-relaxed text-[#555]">
+              Каталог, заказы, подписки и поддержка работают в одном профиле. После выбора города сайт покажет актуальные анкеты и быстрые фильтры.
+            </p>
+
+            <div className="mt-8 max-w-xl">
+              <label htmlFor="landing-city" className="mb-2 block text-sm font-semibold text-[#666]">Город</label>
               <div className="relative">
-                <div className="relative group">
-                  <label htmlFor="landing-city" className="sr-only">Город</label>
-                  <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gold-500 transition-colors group-focus-within:text-gold-400" />
-                  <input
-                    ref={inputRef}
-                    id="landing-city"
-                    type="text"
-                    placeholder="Введите ваш город"
-                    value={cityInput}
-                    onChange={(e) => { setCityInput(e.target.value); setError(''); }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        if (suggestions.length > 0) selectCity(suggestions[0]);
-                        else handleContinue();
-                      }
-                      if (e.key === 'Escape') setShowSuggestions(false);
-                    }}
-                    onFocus={() => { setIsFocused(true); setShowSuggestions(suggestions.length > 0); }}
-                    role="combobox"
-                    aria-expanded={showSuggestions}
-                    aria-autocomplete="list"
-                    autoComplete="off"
-                    className="w-full bg-ink-925 border border-white/[0.08] rounded-2xl pl-12 pr-5 py-4 text-sand-100 placeholder-sand-600 text-sm outline-none focus:border-gold-500/50 focus:bg-ink-800 transition-all shadow-inner"
-                  />
-                </div>
+                <MapPin size={19} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#ff5a82]" />
+                <input
+                  ref={inputRef}
+                  id="landing-city"
+                  type="text"
+                  placeholder="Например: Москва"
+                  value={cityInput}
+                  onChange={(e) => { setCityInput(e.target.value); setError(''); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (suggestions.length > 0) selectCity(suggestions[0]);
+                      else handleContinue();
+                    }
+                    if (e.key === 'Escape') setShowSuggestions(false);
+                  }}
+                  onFocus={() => { setIsFocused(true); setShowSuggestions(suggestions.length > 0); }}
+                  role="combobox"
+                  aria-expanded={showSuggestions}
+                  aria-autocomplete="list"
+                  autoComplete="off"
+                  className="h-14 w-full rounded-xl bg-[#f3f3f3] pl-12 pr-4 text-base outline-none ring-1 ring-transparent transition focus:bg-white focus:ring-[#ff5a82]"
+                />
 
                 <AnimatePresence>
                   {showSuggestions && (
                     <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.15 }}
                       ref={suggestionsRef}
                       role="listbox"
                       aria-label="Предложенные города"
-                      className="absolute left-0 right-0 top-full mt-2 max-h-64 overflow-y-auto bg-ink-600/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl z-20 shadow-[0_20px_50px_rgba(0,0,0,0.9)]"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.12 }}
+                      className="absolute left-0 right-0 top-full z-20 mt-2 max-h-64 overflow-y-auto rounded-xl bg-white shadow-[0_18px_45px_rgba(0,0,0,0.16)] ring-1 ring-black/5"
                     >
-                      {suggestions.map((c) => (
+                      {suggestions.map((suggestion) => (
                         <button
-                          key={c}
+                          key={suggestion}
                           role="option"
                           aria-selected={false}
-                          onClick={() => selectCity(c)}
-                          className="w-full flex items-center gap-3 px-5 py-4 text-sm text-sand-200 hover:bg-white/[0.06] transition-colors border-b border-white/[0.02] last:border-0 text-left"
+                          onClick={() => selectCity(suggestion)}
+                          className="flex w-full items-center gap-3 border-b border-[#f1f1f1] px-4 py-3 text-left text-sm last:border-b-0 hover:bg-[#f7f7f7]"
                         >
-                          <MapPin size={14} className="text-gold-500/70 shrink-0" />
-                          {c}
+                          <MapPin size={15} className="text-[#ff5a82]" />
+                          {suggestion}
                         </button>
                       ))}
                     </motion.div>
@@ -153,74 +142,38 @@ export default function LandingPage() {
                 </AnimatePresence>
               </div>
 
-              <AnimatePresence>
-                {error && (
-                  <motion.p
-                    role="alert"
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="text-red-400/90 text-xs px-2 text-center"
-                  >
-                    {error}
-                  </motion.p>
-                )}
-              </AnimatePresence>
+              {error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
 
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleContinue}
-                className="w-full py-4 rounded-2xl bg-gradient-to-r from-gold-500 to-gold-400 text-ink-900 font-bold text-[13px] tracking-[0.15em] uppercase shadow-[0_5px_20px_rgba(196,163,90,0.25)] hover:shadow-[0_8px_25px_rgba(196,163,90,0.35)] transition-all flex items-center justify-center gap-2"
-              >
-                Продолжить
-                <ChevronRight size={18} />
-              </motion.button>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <button onClick={handleContinue} className="flex h-13 items-center justify-center gap-2 rounded-xl bg-[#ff5a82] px-6 font-semibold text-white">
+                  Открыть каталог <ChevronRight size={18} />
+                </button>
+                <button onClick={() => navigate('/catalog')} className="flex h-13 items-center justify-center gap-2 rounded-xl bg-[#202020] px-6 font-semibold text-white">
+                  <Search size={17} /> Смотреть все
+                </button>
+              </div>
             </div>
-          </div>
-        </motion.div>
-      </section>
+          </motion.div>
 
-      {/* Info Sections */}
-      <section className="relative z-10 px-6 pb-16 bg-gradient-to-b from-transparent to-ink-800">
-        <div className="max-w-sm md:max-w-2xl mx-auto space-y-12">
-          <div className="text-center">
-            <h3 className="text-lg text-sand-100 tracking-widest uppercase font-light mb-8">Почему выбирают нас</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <aside className="md:pt-10">
+            <div className="divide-y divide-[#eeeeee] border-y border-[#eeeeee]">
               {[
-                { icon: ShieldCheck, title: "100% Анонимность", desc: "Ваши данные и история заказов полностью конфиденциальны и надежно защищены." },
-                { icon: Star, title: "Проверенные анкеты", desc: "Все модели проходят строгую верификацию. Фото на 100% соответствуют реальности." },
-                { icon: Heart, title: "Премиальный сервис", desc: "Только лучшие компаньонки, способные удовлетворить самые высокие ожидания." },
-                { icon: Clock, title: "Быстрая организация", desc: "Мгновенное подтверждение заказа и возможность срочного выезда в течение часа." }
-              ].map((item, idx) => (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ delay: idx * 0.08, duration: 0.45 }}
-                  key={idx} 
-                  className="flex items-start gap-4 bg-gradient-to-br from-ink-600/60 to-ink-800 p-5 rounded-3xl border border-white/[0.04] shadow-lg"
-                >
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-gold-500/20 to-gold-500/5 flex items-center justify-center shrink-0 border border-gold-500/20 shadow-[0_0_15px_rgba(196,163,90,0.1)]">
-                    <item.icon size={20} className="text-gold-500" />
+                { icon: SlidersHorizontal, title: 'Фильтры без лишнего', text: 'Цена, услуги, сортировка и избранное работают прямо из каталога.' },
+                { icon: Headphones, title: 'Заказы через поддержку', text: 'После заявки открывается чат, где подтверждаются детали и оплата.' },
+                { icon: ShieldCheck, title: 'Профиль клиента', text: 'Избранное, чаты, заказы и подписки собраны в одном месте.' },
+              ].map(({ icon: Icon, title, text }) => (
+                <div key={title} className="flex gap-4 py-5 first:pt-0 last:pb-0">
+                  <Icon size={22} className="mt-1 shrink-0 text-[#ff5a82]" />
+                  <div>
+                    <h2 className="font-black">{title}</h2>
+                    <p className="mt-1 text-sm leading-relaxed text-[#666]">{text}</p>
                   </div>
-                  <div className="text-left pt-1">
-                    <h4 className="text-sand-100 font-medium text-[13px] mb-1.5 uppercase tracking-wider">{item.title}</h4>
-                    <p className="text-sand-400 text-xs leading-relaxed font-light">{item.desc}</p>
-                  </div>
-                </motion.div>
+                </div>
               ))}
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="relative z-10 border-t border-white/[0.04] py-10 text-center bg-ink-900">
-        <div className="w-8 h-[1px] bg-gold-500/30 mx-auto mb-6" />
-        <p className="text-sand-600 text-[9px] tracking-[0.3em] uppercase mb-3">© {new Date().getFullYear()} OneNight Club</p>
-        <p className="text-gold-500/40 text-[9px] tracking-[0.3em] uppercase">Strictly Confidential</p>
-      </footer>
+          </aside>
+        </section>
+      </main>
     </div>
   );
 }

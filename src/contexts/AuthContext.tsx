@@ -52,7 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!data) return { error: 'Пользователь с таким email не найден.' };
     if (!data.password_hash) return { error: 'Пользователь не может войти через пароль.' };
 
-    const ok = await verifyPassword(password, data.password_hash);
+    let ok = false;
+    try {
+      ok = await verifyPassword(password, data.password_hash);
+    } catch (err) {
+      console.error('Password verify error:', err);
+      return { error: 'Не удалось проверить пароль. Попробуйте открыть сайт через localhost или HTTPS.' };
+    }
     if (!ok) return { error: 'Неверный пароль.' };
 
     const s: ClientSession = {
@@ -91,7 +97,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (workerRows?.[0]) workerId = workerRows[0].tg_id;
     }
 
-    const passwordHash = await hashPassword(password);
+    let passwordHash = '';
+    try {
+      passwordHash = await hashPassword(password);
+    } catch (err) {
+      console.error('Password hash error:', err);
+      return { error: 'Не удалось подготовить пароль. Попробуйте открыть сайт через localhost или HTTPS.' };
+    }
 
     const { data, error } = await supabase
       .from('clients')

@@ -1,26 +1,43 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Tag, Check, Calendar as CalendarIcon, Clock, MapPin, Sparkles, Banknote, Lock, CreditCard } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Banknote, CalendarDays, Check, Clock3, CreditCard, MapPin, ShieldCheck, Tag } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
-import { Model, PromoCode, AVAILABLE_SERVICES, DURATION_OPTIONS, CASH_PAYMENT_UNLOCK_ORDERS } from '@/types';
+import { AVAILABLE_SERVICES, CASH_PAYMENT_UNLOCK_ORDERS, DURATION_OPTIONS, Model, PromoCode } from '@/types';
 import { resolveModelCity } from '@/lib/city';
-import Layout from '@/components/Layout';
+import { ensureOpenSupportChat, sendSupportMessage } from '@/lib/supportChat';
 import AuthModal from '@/components/AuthModal';
-import TrustBadges from '@/components/TrustBadges';
+import Layout from '@/components/Layout';
+import PageHeader from '@/components/PageHeader';
+import VerifiedBadge from '@/components/VerifiedBadge';
+
+const dateOptions = ['Сегодня', 'Завтра', 'Послезавтра', 'Другая дата'] as const;
+
+function isoDateAfter(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
+function formatUsd(value: number): string {
+  return `$${Math.max(0, Math.round(value))}`;
+}
 
 export default function OrderPage() {
-  const { city: userCity } = useApp();
   const { modelId } = useParams<{ modelId: string }>();
   const navigate = useNavigate();
+  const { city: userCity } = useApp();
   const { session } = useAuth();
+
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const [orderDate, setOrderDate] = useState('');
+  const [orderDate, setOrderDate] = useState<(typeof dateOptions)[number]>('Сегодня');
   const [customDate, setCustomDate] = useState('');
   const [orderTime, setOrderTime] = useState('');
   const [duration, setDuration] = useState('1 час');
@@ -31,40 +48,42 @@ export default function OrderPage() {
   const [promoData, setPromoData] = useState<PromoCode | null>(null);
   const [promoError, setPromoError] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
-  const [showAuth, setShowAuth] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'online' | 'cash'>('online');
   const [completedOrders, setCompletedOrders] = useState(0);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = isoDateAfter(0);
   const cashUnlocked = completedOrders >= CASH_PAYMENT_UNLOCK_ORDERS;
-
-  const resolveOrderDate = (): string | null => {
-    const addDays = (n: number) => {
-      const d = new Date();
-      d.setDate(d.getDate() + n);
-      return d.toISOString().split('T')[0];
-    };
-    if (orderDate === 'Сегодня') return todayStr;
-    if (orderDate === 'Завтра') return addDays(1);
-    if (orderDate === 'Послезавтра') return addDays(2);
-    if (orderDate === 'Другая дата') return customDate || null;
-    return null;
-  };
+  const displayCity = resolveModelCity(model, userCity) || userCity || 'Москва';
 
   useEffect(() => {
     if (!session) {
       setShowAuth(true);
+      setLoading(false);
       return;
     }
     fetchModel();
     fetchCompletedOrdersCount();
   }, [modelId, session]);
 
+  const resolveOrderDate = (): string | null => {
+    if (orderDate === 'Сегодня') return todayStr;
+    if (orderDate === 'Завтра') return isoDateAfter(1);
+    if (orderDate === 'Послезавтра') return isoDateAfter(2);
+    if (orderDate === 'Другая дата') return customDate || null;
+    return null;
+  };
+
+  const dateLabel = (): string => {
+    const resolved = resolveOrderDate();
+    return orderDate === 'Другая дата' ? (resolved ?? 'дата не выбрана') : orderDate;
+  };
+
   const fetchModel = async () => {
     if (!modelId) return;
-    const { data } = await supabase.from('models').select('*').eq('id', modelId).maybeSingle();
-    setModel(data);
+    setLoading(true);
+    const { data, error } = await supabase.from('models').select('*').eq('id', modelId).maybeSingle();
+    if (error) console.error('Order model fetch error:', error);
+    setModel(data ?? null);
     setLoading(false);
   };
 
@@ -78,8 +97,31 @@ export default function OrderPage() {
     setCompletedOrders(count ?? 0);
   };
 
-  const toggleService = (s: string) => {
-    setServices((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
+  const priceDetails = useMemo(() => {
+    const base = model?.price ?? 150;
+    let multiplier = 1;
+    let discount = 0;
+    if (duration === '2 часа') { multiplier = 2; discount = 50; }
+    if (duration === '3 часа') { multiplier = 3; discount = 100; }
+    if (duration === 'Ночь') { multiplier = 6; discount = 300; }
+    const durationPrice = base * multiplier;
+    const afterDurationDiscount = Math.max(0, durationPrice - discount);
+    const extraServices = Math.max(0, services.length - 2);
+    const servicesPrice = extraServices * 30;
+    const prePromo = afterDurationDiscount + servicesPrice;
+    const promoDiscount = promoData ? Math.floor((prePromo * promoData.discount) / 100) : 0;
+    return {
+      base,
+      durationPrice,
+      discount,
+      servicesPrice,
+      promoDiscount,
+      total: Math.max(0, prePromo - promoDiscount),
+    };
+  }, [model?.price, duration, services.length, promoData]);
+
+  const toggleService = (service: string) => {
+    setServices((prev) => prev.includes(service) ? prev.filter((item) => item !== service) : [...prev, service]);
   };
 
   const applyPromo = async () => {
@@ -107,26 +149,13 @@ export default function OrderPage() {
     e.preventDefault();
     if (!session || !model) return;
     setFormError(null);
-    if (!orderDate) { setFormError('Выберите дату встречи'); return; }
+
     const resolvedDate = resolveOrderDate();
-    if (!resolvedDate) { setFormError('Укажите конкретную дату встречи'); return; }
-    if (!location.trim()) { setFormError('Укажите место встречи'); return; }
+    if (!resolvedDate) { setFormError('Укажите конкретную дату встречи.'); return; }
+    if (!location.trim()) { setFormError('Укажите место встречи.'); return; }
 
     setSubmitting(true);
-    let finalPrice = null;
-    if (model) {
-      const basePrice = model.price ?? 150;
-      let mult = 1;
-      let disc = 0;
-      if (duration === '2 часа') { mult = 2; disc = 50; }
-      else if (duration === '3 часа') { mult = 3; disc = 100; }
-      else if (duration === 'Ночь') { mult = 6; disc = 300; }
-      const prePromo = (basePrice * mult) - disc + (Math.max(0, services.length - 2) * 30);
-      finalPrice = prePromo - (promoData ? Math.floor((prePromo * promoData.discount) / 100) : 0);
-    }
-
     const effectivePaymentMethod = cashUnlocked ? paymentMethod : 'online';
-
     const { error } = await supabase.from('orders').insert({
       client_id: session.id,
       model_id: model.id,
@@ -137,58 +166,41 @@ export default function OrderPage() {
       location: location.trim(),
       services: services.join(', ') || null,
       comment: comment.trim() || null,
-      price: finalPrice,
+      price: priceDetails.total,
       payment_method: effectivePaymentMethod,
     });
 
     if (error) {
       console.error('Order insert error:', error);
-      setFormError('Ошибка отправки заказа. Попробуйте позже.');
+      setFormError('Не удалось отправить заказ. Проверьте данные и попробуйте ещё раз.');
       setSubmitting(false);
       return;
     }
-    // worker_id attribution and the "created_order" notification log are
-    // now derived server-side from model_id (see 09_security_hardening.sql) —
-    // the browser never needs to know or send the model's worker_id.
 
-    // Create or find support chat and send order details
-    const { data: existingChat } = await supabase
-      .from('support_chats')
-      .select('id')
-      .eq('client_id', session.id)
-      .eq('status', 'open')
-      .maybeSingle();
-
-    let chatId = existingChat?.id;
-
+    // worker_id недоступен браузеру (отозван у anon) — привязку заказа и
+    // чата к воркеру делают триггеры БД. Лог created_order тоже пишет триггер.
+    const chatId = await ensureOpenSupportChat(session.id, session.worker_id);
     if (!chatId) {
-      const { data: newChat, error: chatError } = await supabase
-        .from('support_chats')
-        .insert({
-          client_id: session.id,
-          worker_id: session.worker_id,
-          status: 'open'
-        })
-        .select('id')
-        .single();
-      
-      if (!chatError && newChat) {
-        chatId = newChat.id;
-      }
+      setFormError('Заказ создан, но чат поддержки не открылся. Напишите в поддержку из профиля.');
+      setSubmitting(false);
+      return;
     }
 
-    if (chatId) {
-      const paymentLabel = effectivePaymentMethod === 'cash' ? 'Наличными при встрече' : 'Онлайн';
-      const dateLabel = orderDate === 'Другая дата' ? resolvedDate : orderDate;
-      const orderMessage = `Здравствуйте! Я оформил заказ на модель ${model.name}.\nДата: ${dateLabel}\nДлительность: ${duration}\nАдрес: ${location}\nОплата: ${paymentLabel}\nУслуги: ${services.join(', ') || 'Стандартные'}${comment ? `\nКомментарий: ${comment}` : ''}\n\nДетали времени готов обсудить в чате. Жду подтверждения!`;
-      
-      const { error: msgError } = await supabase.from('support_messages').insert({
-        chat_id: chatId,
-        sender: 'client',
-        text: orderMessage
-      });
-      if (msgError) console.error("Support message error:", msgError);
-    }
+    const paymentLabel = effectivePaymentMethod === 'cash' ? 'Наличными при встрече' : 'Онлайн';
+    const orderMessage = [
+      `Здравствуйте! Я оформил заказ на модель ${model.name} (${model.code}).`,
+      `Дата: ${dateLabel()}${orderTime ? `, время: ${orderTime}` : ''}`,
+      `Длительность: ${duration}`,
+      `Адрес: ${location.trim()}`,
+      `Оплата: ${paymentLabel}`,
+      `Стоимость: ${formatUsd(priceDetails.total)}`,
+      `Услуги: ${services.join(', ') || 'Стандартные'}`,
+      comment.trim() ? `Комментарий: ${comment.trim()}` : '',
+      '',
+      'Подтвердите детали, пожалуйста.',
+    ].filter(Boolean).join('\n');
+
+    await sendSupportMessage(chatId, orderMessage);
 
     setSubmitting(false);
     navigate('/chat/support');
@@ -196,102 +208,76 @@ export default function OrderPage() {
 
   if (!session) {
     return (
-      <Layout hideNav>
-        <div className="min-h-dvh flex flex-col items-center justify-center px-6 text-center bg-ink-900">
-          <div className="w-12 h-[1px] bg-gradient-to-r from-transparent via-gold-500/50 to-transparent mx-auto mb-6" />
-          <p className="text-sand-300 text-sm mb-6 tracking-wide font-light">Войдите, чтобы оформить заказ</p>
-          <motion.button 
-            whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-            onClick={() => navigate(-1)} 
-            className="px-6 py-2.5 rounded-full border border-gold-500/30 text-gold-500 text-xs tracking-[0.2em] uppercase hover:bg-gold-500/10 transition-colors"
-          >
-            Назад
-          </motion.button>
+      <Layout>
+        <div className="min-h-[70dvh] bg-white text-[#202020] flex items-center justify-center px-5">
+          <div className="max-w-sm text-center">
+            <h1 className="text-3xl font-black">Войдите, чтобы оформить заказ</h1>
+            <p className="mt-3 text-[#777]">После входа вы вернётесь к форме оформления.</p>
+            <button onClick={() => setShowAuth(true)} className="mt-6 h-12 rounded-lg bg-[#ff5a82] px-6 font-semibold text-white">Войти</button>
+          </div>
+          {showAuth && <AuthModal onClose={() => navigate(-1)} onSuccess={() => { setShowAuth(false); fetchModel(); }} />}
         </div>
-        {showAuth && <AuthModal onClose={() => navigate(-1)} onSuccess={() => { setShowAuth(false); fetchModel(); }} />}
       </Layout>
     );
   }
 
   if (loading) {
     return (
-      <Layout hideNav>
-        <div className="min-h-dvh flex flex-col items-center justify-center bg-ink-900">
-          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }} className="w-10 h-10 rounded-full border border-gold-500/30 border-t-gold-500" />
-          <p className="text-sand-300 text-xs tracking-[0.2em] mt-4 uppercase font-light">Подготовка формы</p>
+      <Layout>
+        <div className="min-h-[70dvh] bg-white flex items-center justify-center">
+          <div className="h-9 w-9 animate-spin rounded-full border border-[#ff5a82]/25 border-t-[#ff5a82]" />
         </div>
       </Layout>
     );
   }
 
-  const displayCity = resolveModelCity(model, userCity);
+  if (!model) {
+    return (
+      <Layout>
+        <div className="min-h-[70dvh] bg-white text-[#202020] flex flex-col items-center justify-center px-5 text-center">
+          <h1 className="text-3xl font-black">Анкета не найдена</h1>
+          <button onClick={() => navigate('/catalog')} className="mt-6 h-12 rounded-lg bg-[#4773d8] px-6 font-semibold text-white">В каталог</button>
+        </div>
+      </Layout>
+    );
+  }
+
+  const serviceOptions = model.services?.length ? model.services : AVAILABLE_SERVICES;
 
   return (
-    <Layout hideNav>
-      <div className="pb-10 flex-1 flex flex-col">
-        <div className="sticky top-0 z-20 pt-safe bg-ink-900/90 backdrop-blur-xl border-b border-white/[0.04]">
-          <div className="flex items-center justify-between px-5 py-4">
-            <motion.button
-              whileTap={{ scale: 0.9 }}
-              onClick={() => navigate(-1)}
-              aria-label="Назад"
-              className="w-11 h-11 flex items-center justify-center rounded-xl bg-ink-600 border border-white/[0.08] text-sand-300 hover:text-sand-100 hover:border-gold-500/30 transition-colors shadow-lg"
-            >
-              <ArrowLeft size={18} />
-            </motion.button>
-            <p className="text-sm font-medium text-gold-500 tracking-[0.2em] uppercase drop-shadow-md">Оформить заказ</p>
-            <div className="w-11" />
+    <Layout>
+      <div className="flex min-h-screen flex-col bg-[#202020]">
+        <PageHeader title="Оформление заказа" subtitle={`${model.name} · ${model.code}`} />
+        <main className="flex-1 bg-white text-[#202020] md:rounded-t-[22px] md:rounded-none">
+          <div className="mx-auto max-w-[1200px]">
+            <div className="hidden px-5 py-5 md:block md:px-6 md:py-6">
+            <button onClick={() => navigate(-1)} className="mb-4 inline-flex items-center gap-2 text-sm text-[#777] transition-colors hover:text-[#202020]">
+              <ArrowLeft size={16} /> Назад к анкете
+            </button>
+            <div className="text-sm text-[#ababab]">Главная <span className="px-2">•</span> Заказ <span className="px-2">•</span> {model.name}</div>
+            <h1 className="mt-4 text-3xl font-black leading-tight md:text-4xl">Оформить заказ</h1>
           </div>
-        </div>
 
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-          {model && (
-            <div className="flex items-center gap-4 mx-5 mt-6 p-4 rounded-2xl bg-gradient-to-br from-ink-600 to-ink-800 border border-white/[0.06] shadow-lg">
-              <div className="w-16 h-16 rounded-xl overflow-hidden bg-ink-300 border border-white/[0.05] shadow-[0_0_15px_rgba(0,0,0,0.5)]">
-                {model.photos?.[0] && <img src={model.photos[0]} alt="" className="w-full h-full object-cover" />}
-              </div>
-              <div>
-                <p className="font-semibold text-sand-100 text-lg tracking-wide">{model.name}{model.age ? <span className="text-sand-400 font-light">, {model.age}</span> : ''}</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <p className="select-text text-gold-500 text-[10px] font-mono tracking-widest uppercase">{model.code}</p>
-                  {displayCity && (
-                    <>
-                      <div className="w-1 h-1 rounded-full bg-white/[0.1] shrink-0" />
-                      <p className="text-sand-300 text-xs font-light">{displayCity}</p>
-                    </>
-                  )}
+          <form onSubmit={handleSubmit} className="mx-auto grid max-w-[1200px] gap-6 px-4 pt-4 pb-40 md:grid-cols-[1fr_360px] md:gap-7 md:px-6 md:pt-0 md:pb-12">
+            <section className="min-w-0 space-y-5">
+              <div className="flex items-center gap-4 border-y border-[#eeeeee] bg-white py-4">
+                <div className="h-24 w-20 shrink-0 overflow-hidden rounded-xl bg-[#eee]">
+                  {model.photos?.[0] && <img src={model.photos[0]} alt="" className="h-full w-full object-cover" />}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="flex items-center gap-2 text-2xl font-black">
+                    <span className="truncate">{model.name}{model.age ? `, ${model.age}` : ''}</span>
+                    <VerifiedBadge size={18} />
+                  </h2>
+                  <p className="mt-1 text-lg font-medium text-[#4778dc]">{displayCity}</p>
+                  <p className="mt-1 text-sm text-[#888]">{model.code}</p>
                 </div>
               </div>
-            </div>
-          )}
 
-          <form onSubmit={handleSubmit} className="px-5 pt-8 pb-8 space-y-8">
-            <div className="space-y-6">
-              <div>
-                <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 font-semibold">
-                  <CalendarIcon size={12} /> Дата *
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Сегодня', value: 'Сегодня' },
-                    { label: 'Завтра', value: 'Завтра' },
-                    { label: 'Послезавтра', value: 'Послезавтра' },
-                    { label: 'Другая дата', value: 'Другая дата' }
-                  ].map(({ label, value }) => (
-                    <motion.button
-                      key={value}
-                      type="button"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setOrderDate(value)}
-                      className={`px-4 py-3 rounded-xl text-xs border font-medium transition-all ${
-                        orderDate === value
-                          ? 'bg-gradient-to-br from-gold-500/20 to-gold-500/5 border-gold-500/40 text-gold-500 shadow-[0_0_15px_rgba(196,163,90,0.15)]'
-                          : 'bg-ink-600 border-white/[0.06] text-sand-400 hover:border-white/[0.15] hover:text-sand-300'
-                      }`}
-                    >
-                      {label}
-                    </motion.button>
+              <Panel title="Дата и время" icon={<CalendarDays size={19} />}>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {dateOptions.map((item) => (
+                    <OptionButton key={item} active={orderDate === item} onClick={() => setOrderDate(item)}>{item}</OptionButton>
                   ))}
                 </div>
                 {orderDate === 'Другая дата' && (
@@ -300,226 +286,186 @@ export default function OrderPage() {
                     value={customDate}
                     min={todayStr}
                     onChange={(e) => setCustomDate(e.target.value)}
-                    className="w-full mt-2.5 bg-ink-600 border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-sand-100 outline-none focus:border-gold-500/40 transition-all"
+                    className="mt-3 h-12 w-full rounded-xl border border-[#dedede] bg-[#f7f7f7] px-4 outline-none focus:border-[#ff5a82]"
                   />
                 )}
-                <p className="text-[10px] text-sand-500 mt-3 flex items-center gap-1.5 uppercase tracking-wider font-light">
-                  <Clock size={10} /> Детали времени обсуждаются в чате
-                </p>
-              </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <Clock3 size={17} className="text-[#9b9b9b]" />
+                  <input
+                    type="time"
+                    value={orderTime}
+                    onChange={(e) => setOrderTime(e.target.value)}
+                    className="h-12 rounded-xl border border-[#dedede] bg-[#f7f7f7] px-4 outline-none focus:border-[#ff5a82]"
+                  />
+                  <span className="text-sm text-[#888]">можно уточнить в чате</span>
+                </div>
+              </Panel>
 
-              <div>
-                <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 font-semibold">Длительность</span>
-                <div className="flex gap-2 flex-wrap">
+              <Panel title="Длительность" icon={<Clock3 size={19} />}>
+                <div className="flex flex-wrap gap-2">
                   {DURATION_OPTIONS.map(({ label, value }) => (
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} key={value} type="button" onClick={() => setDuration(value)}
-                      className={`px-5 py-2.5 rounded-xl text-xs border font-medium transition-all ${
-                        duration === value
-                          ? 'bg-gradient-to-br from-gold-500/20 to-gold-500/5 border-gold-500/40 text-gold-500 shadow-[0_0_15px_rgba(196,163,90,0.15)]'
-                          : 'bg-ink-600 border-white/[0.06] text-sand-400 hover:border-white/[0.15] hover:text-sand-300'
-                      }`}>
-                      {label}
-                    </motion.button>
+                    <OptionButton key={value} active={duration === value} onClick={() => setDuration(value)}>{label}</OptionButton>
                   ))}
                 </div>
-              </div>
+              </Panel>
 
-              <label className="block">
-                <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 font-semibold">
-                  <MapPin size={12} /> Место встречи *
-                </span>
-                <input type="text" placeholder="Укажите адрес или отель" value={location} onChange={(e) => setLocation(e.target.value)}
-                  required
-                  className="w-full bg-ink-600 border border-white/[0.06] rounded-2xl px-5 py-4 text-sm text-sand-100 placeholder-sand-600 outline-none focus:border-gold-500/40 focus:bg-ink-400 transition-all shadow-inner" />
-              </label>
+              <Panel title="Место встречи" icon={<MapPin size={19} />}>
+                <input
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Адрес, отель или район"
+                  className="h-13 w-full rounded-xl border border-[#dedede] bg-[#f7f7f7] px-4 py-3 outline-none focus:border-[#ff5a82]"
+                />
+              </Panel>
 
-              <div>
-                <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 font-semibold">Услуги</span>
-                <div className="flex flex-wrap gap-2.5">
-                  {(model?.services?.length ? model.services : AVAILABLE_SERVICES).map((s) => (
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} key={s} type="button" onClick={() => toggleService(s)}
-                      className={`px-4 py-2 rounded-xl text-xs border transition-all flex items-center gap-2 font-medium ${
-                        services.includes(s)
-                          ? 'bg-gradient-to-br from-gold-500/20 to-gold-500/5 border-gold-500/40 text-gold-500 shadow-[0_0_15px_rgba(196,163,90,0.15)]'
-                          : 'bg-ink-600 border-white/[0.06] text-sand-400 hover:border-white/[0.15]'
-                      }`}>
-                      {services.includes(s) && <Check size={12} strokeWidth={3} className="text-gold-500" />}
-                      {s}
-                    </motion.button>
+              <Panel title="Услуги" icon={<Check size={19} />}>
+                <div className="flex flex-wrap gap-2">
+                  {serviceOptions.map((service) => (
+                    <OptionButton key={service} active={services.includes(service)} onClick={() => toggleService(service)}>
+                      {services.includes(service) && <Check size={14} />} {service}
+                    </OptionButton>
                   ))}
                 </div>
-              </div>
+              </Panel>
 
-              <div>
-                <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 font-semibold">
-                  <CreditCard size={12} /> Способ оплаты
-                </span>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="button"
-                    onClick={() => setPaymentMethod('online')}
-                    className={`px-4 py-3.5 rounded-xl text-xs border font-medium transition-all flex flex-col items-center gap-1.5 ${
-                      paymentMethod === 'online'
-                        ? 'bg-gradient-to-br from-gold-500/20 to-gold-500/5 border-gold-500/40 text-gold-500 shadow-[0_0_15px_rgba(196,163,90,0.15)]'
-                        : 'bg-ink-600 border-white/[0.06] text-sand-400 hover:border-white/[0.15]'
-                    }`}
-                  >
-                    <CreditCard size={16} />
-                    Онлайн
-                  </motion.button>
-                  <motion.button
-                    whileHover={cashUnlocked ? { scale: 1.02 } : undefined} whileTap={cashUnlocked ? { scale: 0.98 } : undefined} type="button"
-                    onClick={() => cashUnlocked && setPaymentMethod('cash')}
+              <Panel title="Оплата" icon={<CreditCard size={19} />}>
+                <div className="grid grid-cols-2 gap-2">
+                  <OptionButton active={paymentMethod === 'online'} onClick={() => setPaymentMethod('online')}>
+                    <CreditCard size={16} /> Онлайн
+                  </OptionButton>
+                  <button
+                    type="button"
                     disabled={!cashUnlocked}
-                    aria-disabled={!cashUnlocked}
-                    title={cashUnlocked ? undefined : `Доступно после ${CASH_PAYMENT_UNLOCK_ORDERS} успешных заказов`}
-                    className={`relative px-4 py-3.5 rounded-xl text-xs border font-medium transition-all flex flex-col items-center gap-1.5 ${
-                      !cashUnlocked
-                        ? 'bg-ink-600/50 border-white/[0.04] text-sand-600 cursor-not-allowed'
-                        : paymentMethod === 'cash'
-                        ? 'bg-gradient-to-br from-gold-500/20 to-gold-500/5 border-gold-500/40 text-gold-500 shadow-[0_0_15px_rgba(196,163,90,0.15)]'
-                        : 'bg-ink-600 border-white/[0.06] text-sand-400 hover:border-white/[0.15]'
+                    onClick={() => cashUnlocked && setPaymentMethod('cash')}
+                    className={`min-h-12 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors ${
+                      cashUnlocked && paymentMethod === 'cash'
+                        ? 'border-[#ff5a82] bg-[#ff5a82] text-white'
+                        : cashUnlocked
+                          ? 'border-[#dedede] bg-[#f7f7f7] text-[#202020]'
+                          : 'border-[#dedede] bg-[#f1f1f1] text-[#aaa] cursor-not-allowed'
                     }`}
                   >
-                    {cashUnlocked ? <Banknote size={16} /> : <Lock size={14} />}
-                    Наличными
-                  </motion.button>
+                    <span className="inline-flex items-center justify-center gap-2"><Banknote size={16} /> Наличными</span>
+                  </button>
                 </div>
-                <p className="text-[10px] text-sand-500 mt-3 leading-relaxed font-light">
-                  {cashUnlocked
-                    ? 'Оплата наличными при встрече доступна — спасибо за доверие.'
-                    : `Оплата наличными доступна после ${CASH_PAYMENT_UNLOCK_ORDERS} успешных заказов. Выполнено: ${completedOrders}/${CASH_PAYMENT_UNLOCK_ORDERS}.`}
+                <p className="mt-2 text-sm text-[#888]">
+                  {cashUnlocked ? 'Оплата наличными доступна.' : `Наличные открываются после ${CASH_PAYMENT_UNLOCK_ORDERS} завершённых заказов. Сейчас: ${completedOrders}/${CASH_PAYMENT_UNLOCK_ORDERS}.`}
                 </p>
-              </div>
+              </Panel>
 
-              <div className="p-5 rounded-2xl bg-ink-600/50 border border-white/[0.04]">
-                <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 font-semibold">
-                  <Tag size={12} /> Промокод
-                </span>
-                <div className="flex gap-3">
-                  <div className="relative flex-1">
-                    <Sparkles size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-sand-600" />
-                    <input type="text" placeholder="PROMO20" aria-label="Промокод" value={promoCode}
-                      onChange={(e) => { setPromoCode(e.target.value); setPromoError(''); setPromoData(null); }}
-                      className="w-full bg-ink-400 border border-white/[0.06] rounded-xl pl-10 pr-4 py-3.5 text-sm text-sand-100 placeholder-sand-600 outline-none focus:border-gold-500/40 transition-all uppercase tracking-wider" />
-                  </div>
-                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} type="button" onClick={applyPromo} disabled={promoLoading || !promoCode}
-                    className="px-6 py-3.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-sand-300 text-sm font-medium disabled:opacity-30 transition-all">
+              <Panel title="Промокод и комментарий" icon={<Tag size={19} />}>
+                <div className="flex gap-2">
+                  <input
+                    value={promoCode}
+                    onChange={(e) => { setPromoCode(e.target.value); setPromoError(''); setPromoData(null); }}
+                    placeholder="PROMO20"
+                    className="h-12 min-w-0 flex-1 rounded-xl border border-[#dedede] bg-[#f7f7f7] px-4 uppercase outline-none focus:border-[#ff5a82]"
+                  />
+                  <button type="button" onClick={applyPromo} disabled={promoLoading || !promoCode.trim()} className="h-12 rounded-xl bg-[#202020] px-5 font-semibold text-white disabled:opacity-40">
                     {promoLoading ? '...' : 'Ок'}
-                  </motion.button>
+                  </button>
                 </div>
                 <AnimatePresence>
-                  {promoError && (
-                    <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-red-400 text-xs mt-3">{promoError}</motion.p>
-                  )}
-                  {promoData && (
-                    <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="text-gold-500 text-xs mt-3 flex items-center gap-1.5 font-medium">
-                      <Check size={12} strokeWidth={3} /> Скидка {promoData.discount}% применена
+                  {promoError && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-2 text-sm text-red-500">{promoError}</motion.p>}
+                  {promoData && <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-2 text-sm font-semibold text-[#ff5a82]">Скидка {promoData.discount}% применена</motion.p>}
+                </AnimatePresence>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  rows={3}
+                  placeholder="Комментарий к заказу"
+                  className="mt-3 w-full rounded-xl border border-[#dedede] bg-[#f7f7f7] px-4 py-3 outline-none focus:border-[#ff5a82]"
+                />
+              </Panel>
+            </section>
+
+            <aside className="md:sticky md:top-36 md:self-start">
+              <div className="rounded-2xl bg-[#f7f7f7] p-5">
+                <h2 className="text-2xl font-black">Итого</h2>
+                <div className="mt-5 space-y-3 text-base">
+                  <SummaryRow label="Дата" value={dateLabel()} />
+                  <SummaryRow label="Время" value={orderTime || 'уточнить'} />
+                  <SummaryRow label="Длительность" value={duration} />
+                  <SummaryRow label="База" value={formatUsd(priceDetails.base)} />
+                  <SummaryRow label="Время" value={formatUsd(priceDetails.durationPrice)} />
+                  {priceDetails.discount > 0 && <SummaryRow label="Скидка времени" value={`-${formatUsd(priceDetails.discount)}`} accent />}
+                  {priceDetails.servicesPrice > 0 && <SummaryRow label="Доп. услуги" value={`+${formatUsd(priceDetails.servicesPrice)}`} />}
+                  {priceDetails.promoDiscount > 0 && <SummaryRow label="Промокод" value={`-${formatUsd(priceDetails.promoDiscount)}`} accent />}
+                </div>
+                <div className="mt-5 flex items-center justify-between border-t border-[#e9e9e9] pt-5">
+                  <span className="text-lg font-black">К оплате</span>
+                  <span className="text-3xl font-black text-[#ff5a82]">{formatUsd(priceDetails.total)}</span>
+                </div>
+                <div className="mt-5 rounded-xl bg-[#e9efff] p-4 text-sm text-[#3f4a5e]">
+                  <ShieldCheck size={18} className="mb-2" />
+                  После отправки заявки откроется чат поддержки. Менеджер подтвердит детали и оплату.
+                </div>
+                <AnimatePresence>
+                  {formError && (
+                    <motion.p role="alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                      {formError}
                     </motion.p>
                   )}
                 </AnimatePresence>
+                {/* На десктопе кнопка в сводке; на телефоне — в плавающей панели снизу */}
+                <button type="submit" disabled={submitting} className="mt-5 hidden h-14 w-full rounded-xl bg-[#4773d8] text-lg font-bold text-white transition-transform active:scale-[0.99] disabled:opacity-50 md:block">
+                  {submitting ? 'Отправляем...' : 'Отправить заказ'}
+                </button>
               </div>
+            </aside>
 
-              <label className="block">
-                <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2 font-semibold">Комментарий</span>
-                <textarea value={comment} onChange={(e) => setComment(e.target.value)}
-                  placeholder="Дополнительные пожелания к заказу..."
-                  rows={3}
-                  className="w-full bg-ink-600 border border-white/[0.06] rounded-2xl px-5 py-4 text-sm text-sand-100 placeholder-sand-600 outline-none focus:border-gold-500/40 focus:bg-ink-400 transition-all resize-none shadow-inner" />
-              </label>
-            </div>
-
-            {model && (
-              <div className="pt-6 border-t border-white/[0.04]">
-                <div className="bg-gradient-to-br from-gold-500/10 to-transparent p-5 rounded-2xl border border-gold-500/20">
-                  <span className="text-[10px] text-gold-500 uppercase tracking-[0.2em] mb-4 block font-semibold">Итоговая стоимость</span>
-                  
-                  {(() => {
-                    const basePrice = model.price ?? 150;
-                    let mult = 1, disc = 0;
-                    if (duration === '2 часа') { mult = 2; disc = 50; }
-                    else if (duration === '3 часа') { mult = 3; disc = 100; }
-                    else if (duration === 'Ночь') { mult = 6; disc = 300; }
-                    
-                    const durationPrice = basePrice * mult;
-                    const durationFinal = durationPrice - disc;
-                    const extras = Math.max(0, services.length - 2);
-                    const servicesPrice = extras * 30;
-                    const prePromo = durationFinal + servicesPrice;
-                    const promoDiscountAmt = promoData ? Math.floor((prePromo * promoData.discount) / 100) : 0;
-                    const finalPrice = prePromo - promoDiscountAmt;
-
-                    return (
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between text-sand-400">
-                          <span>Базовая цена (1 час)</span>
-                          <span>${basePrice}</span>
-                        </div>
-                        <div className="flex justify-between text-sand-400">
-                          <span>Время ({duration})</span>
-                          <div className="text-right">
-                            <span className={disc > 0 ? "line-through text-white/30 text-xs mr-2" : ""}>
-                              ${durationPrice}
-                            </span>
-                            <span className={disc > 0 ? "text-sand-100" : ""}>${durationFinal}</span>
-                            {disc > 0 && <p className="text-[10px] text-gold-500 tracking-wider mt-0.5">Выгода ${disc}</p>}
-                          </div>
-                        </div>
-                        {servicesPrice > 0 && (
-                          <div className="flex justify-between text-sand-400">
-                            <span>Доп. услуги ({extras})</span>
-                            <span>+${servicesPrice}</span>
-                          </div>
-                        )}
-                        {promoDiscountAmt > 0 && (
-                          <div className="flex justify-between text-gold-500">
-                            <span>Промокод</span>
-                            <span>-${promoDiscountAmt}</span>
-                          </div>
-                        )}
-                        <div className="pt-3 mt-3 border-t border-white/[0.06] flex justify-between items-center">
-                          <span className="font-medium text-sand-100">К оплате</span>
-                          <span className="text-xl font-semibold text-gold-500">${finalPrice}</span>
-                        </div>
-                        <div className="flex justify-between text-sand-500 text-[11px] uppercase tracking-wider">
-                          <span>Способ оплаты</span>
-                          <span>{cashUnlocked && paymentMethod === 'cash' ? 'Наличными' : 'Онлайн'}</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
+            {/* Плавающий итог: сумма и главное действие всегда на виду */}
+            <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-lg -translate-x-1/2 border-t border-[#e8e8e8] bg-white/97 px-4 pt-3 pb-safe backdrop-blur md:hidden">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold uppercase tracking-wide text-[#9a9a9a]">К оплате</p>
+                  <p className="text-[22px] font-black leading-tight text-[#ff5a82]">{formatUsd(priceDetails.total)}</p>
                 </div>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="h-13 flex-1 rounded-xl bg-[#4773d8] text-base font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+                >
+                  {submitting ? 'Отправляем...' : 'Отправить заказ'}
+                </button>
               </div>
-            )}
-
-            <div className="pt-4 border-t border-white/[0.04]">
-              <AnimatePresence>
-                {formError && (
-                  <motion.p
-                    role="alert"
-                    initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                    className="text-red-400 text-xs text-center mb-4 px-4 py-3 rounded-xl bg-red-400/10 border border-red-400/20"
-                  >
-                    {formError}
-                  </motion.p>
-                )}
-              </AnimatePresence>
-              <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} type="submit" disabled={submitting}
-                className="w-full py-4.5 rounded-2xl bg-gradient-to-r from-gold-500 to-gold-400 text-ink-900 font-bold text-[13px] tracking-[0.15em] uppercase disabled:opacity-50 transition-all shadow-[0_5px_20px_rgba(196,163,90,0.25)] hover:shadow-[0_8px_25px_rgba(196,163,90,0.35)] flex justify-center items-center h-14">
-                {submitting ? (
-                  <div className="w-5 h-5 rounded-full border-2 border-ink-900/30 border-t-ink-900 animate-spin" />
-                ) : 'Отправить заказ'}
-              </motion.button>
-
-              <p className="text-sand-500 text-[11px] text-center mt-4 uppercase tracking-widest font-light">
-                После отправки откроется чат поддержки
-              </p>
-
-              <TrustBadges className="mt-6" />
             </div>
           </form>
-        </motion.div>
+          </div>
+        </main>
       </div>
     </Layout>
+  );
+}
+
+function Panel({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="border-b border-[#eeeeee] bg-white py-5">
+      <h2 className="mb-4 flex items-center gap-2 text-xl font-black">{icon}{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function OptionButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`min-h-12 rounded-xl border px-4 py-3 text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 ${
+        active ? 'border-[#ff5a82] bg-[#ff5a82] text-white' : 'border-transparent bg-[#f3f3f3] text-[#202020] hover:bg-[#eeeeee]'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SummaryRow({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-[#777]">{label}</span>
+      <b className={accent ? 'text-[#ff5a82]' : 'text-[#202020]'}>{value}</b>
+    </div>
   );
 }

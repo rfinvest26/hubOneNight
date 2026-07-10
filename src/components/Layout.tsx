@@ -1,4 +1,6 @@
 import { ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import BottomNav from './BottomNav';
 import TopNav from './TopNav';
 
@@ -8,13 +10,22 @@ interface Props {
 }
 
 export default function Layout({ children, hideNav = false }: Props) {
+  const { pathname } = useLocation();
+
   return (
-    <div className="min-h-dvh bg-ink-950 text-sand-100 flex flex-col items-center">
-      <div className="w-full max-w-lg md:max-w-2xl lg:max-w-3xl min-h-dvh bg-ink-900 relative shadow-[0_0_50px_rgba(0,0,0,0.8)] border-x border-white/[0.02] flex flex-col">
+    <div className="flex min-h-dvh flex-col bg-[#202020] text-white">
+      <div className="mx-auto flex w-full flex-1 flex-col max-w-lg bg-[#202020] md:max-w-none xl:max-w-[1440px]">
         {!hideNav && <TopNav />}
-        <div className={`flex-1 ${hideNav ? '' : 'pb-20 md:pb-0'}`}>
+        {/* Мягкий переход между экранами вместо резкой подмены DOM */}
+        <motion.div
+          key={pathname}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
+          className={`flex flex-1 flex-col ${hideNav ? '' : 'pb-20 md:pb-0'}`}
+        >
           {children}
-        </div>
+        </motion.div>
         {!hideNav && <BottomNav />}
       </div>
     </div>

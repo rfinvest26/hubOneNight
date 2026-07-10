@@ -13,24 +13,24 @@ function formatTime(iso: string) {
 }
 
 export default function ChatBubble({ message, isOwn }: Props) {
-  const fileUrl = (message as any).file_url;
+  const fileUrl = 'file_url' in message ? message.file_url : null;
   const isImage = fileUrl && fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i);
 
   return (
-    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-1.5`}>
+    <div className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-2`}>
       <div
-        className={`max-w-[78%] px-4 py-2.5 ${
+        className={`max-w-[82%] px-4 py-2.5 shadow-sm ${
           isOwn
-            ? 'bg-gold-500 text-ink-900 rounded-2xl rounded-br-sm'
-            : 'bg-ink-500 border border-white/[0.06] text-sand-100 rounded-2xl rounded-bl-sm'
+            ? 'bg-[#4773d8] text-white rounded-2xl rounded-br-sm'
+            : 'bg-white border border-[#e6e6e6] text-[#202020] rounded-2xl rounded-bl-sm'
         }`}
       >
         {fileUrl && (
-          <div className="mb-2 overflow-hidden rounded-xl bg-black/10 border border-white/5">
+          <div className="mb-2 overflow-hidden rounded-xl bg-black/5 border border-black/5">
             {isImage ? (
               <img src={fileUrl} alt="Вложение" loading="lazy" className="w-full h-auto object-cover max-h-48" />
             ) : (
-              <a href={fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-3 text-xs font-medium hover:opacity-80 transition-opacity ${isOwn ? 'text-ink-900' : 'text-gold-500'}`}>
+              <a href={fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 p-3 text-xs font-medium hover:opacity-80 transition-opacity ${isOwn ? 'text-white' : 'text-[#4773d8]'}`}>
                 <Download size={14} /> Вложение
               </a>
             )}
@@ -39,7 +39,7 @@ export default function ChatBubble({ message, isOwn }: Props) {
         {message.text && (
           <p className="select-text text-sm leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
         )}
-        <span className={`text-[10px] mt-0.5 block text-right tracking-wide ${isOwn ? 'text-ink-900/50' : 'text-sand-600'}`}>
+        <span className={`text-[10px] mt-0.5 block text-right tracking-wide ${isOwn ? 'text-white/70' : 'text-[#999]'}`}>
           {formatTime(message.created_at)}
         </span>
       </div>
