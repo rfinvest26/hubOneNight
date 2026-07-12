@@ -14,6 +14,9 @@ export interface Model {
   name: string;
   age: number | null;
   city: string | null;
+  /** Точная геометка из Google Maps-ссылки, задаётся воркером в боте. Нет — сайт покажет примерный центр города (cityCoordinates.ts). */
+  latitude?: number | null;
+  longitude?: number | null;
   height: number | null;
   weight: number | null;
   description: string | null;
@@ -170,6 +173,9 @@ export const COUNTRY_LABELS: Record<string, string> = {
   ge: 'Грузия',
 };
 
+/** Must stay identical to AVAILABLE_SERVICES in maintps/src/integrations/escortbot/ui.ts —
+ * models can only be tagged with services the bot lets a worker pick, and this list
+ * drives the catalog filter / category chips, so the two must match by exact string. */
 export const AVAILABLE_SERVICES = [
   'Классика',
   'Эскорт',
@@ -179,6 +185,62 @@ export const AVAILABLE_SERVICES = [
   'Апартаменты',
   'Оральные',
   'Компаньонка',
+  'БДСМ',
+  'Госпожа',
+  'Стриптиз',
+  'Лесби',
+  'Анал',
+  'Золотой дождь',
+  'Групповой',
+  'На мероприятие',
+  'Вирт',
+  'Игрушки',
+  'Фистинг',
+  'Страпон',
+  'Рабыня',
+  'Куннилингус',
+  'Глубокий минет',
+  'Французский поцелуй',
+  'Эротический массаж',
+  'Тайский массаж',
+  'Двойное проникновение',
+  'Для пар',
+  'С ночёвкой',
+  'Фотосессии',
+  'Латекс и кожа',
+  'Танец на коленях',
+  'ВИП-эскорт',
+  'Обучение',
+  'Секс по телефону',
+];
+
+/** Группировка AVAILABLE_SERVICES для читаемого отображения в фильтре —
+ * каждая услуга должна встречаться ровно в одной группе. */
+export const SERVICE_CATEGORIES: Array<{ label: string; services: string[] }> = [
+  {
+    label: 'Основное',
+    services: ['Классика', 'Эскорт', 'Компаньонка', 'Выезд', 'Апартаменты', 'На мероприятие', 'ВИП-эскорт', 'С ночёвкой'],
+  },
+  {
+    label: 'Массаж',
+    services: ['Массаж', 'Эротический массаж', 'Тайский массаж'],
+  },
+  {
+    label: 'Интим',
+    services: ['Оральные', 'Куннилингус', 'Глубокий минет', 'Французский поцелуй', 'Анал', 'Двойное проникновение', 'Групповой', 'Для пар', 'Лесби'],
+  },
+  {
+    label: 'Фетиш и ролевые',
+    services: ['Ролевые игры', 'БДСМ', 'Госпожа', 'Рабыня', 'Игрушки', 'Фистинг', 'Страпон', 'Латекс и кожа', 'Золотой дождь'],
+  },
+  {
+    label: 'Развлечения',
+    services: ['Стриптиз', 'Танец на коленях', 'Фотосессии', 'Обучение'],
+  },
+  {
+    label: 'Дистанционно',
+    services: ['Вирт', 'Секс по телефону'],
+  },
 ];
 
 export const DURATION_OPTIONS = [

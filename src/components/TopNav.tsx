@@ -32,7 +32,7 @@ export default function TopNav() {
     <header className="hidden md:block sticky top-0 z-50 bg-[#202020] text-white shadow-[0_8px_24px_rgba(0,0,0,0.28)]">
       <div className="h-9 bg-gradient-to-r from-[#fb4b93] via-[#ff5f76] to-[#8bc8ef]">
         <div className="mx-auto flex h-full max-w-[1040px] items-center justify-between px-5 text-sm">
-          <button onClick={() => navigate('/')} className="flex items-center gap-1.5 opacity-95">
+          <button onClick={() => navigate('/?change=1')} aria-label="Изменить город" className="flex items-center gap-1.5 opacity-95 hover:opacity-100">
             <MapPin size={15} />
             <span>{city || 'Москва'}</span>
           </button>

@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Headphones, Loader2, Paperclip, Send, ShieldCheck } from 'lucide-react';
+import { Headphones, Loader2, Paperclip, Send, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { SupportMessage } from '@/types';
 import { ensureOpenSupportChat } from '@/lib/supportChat';
+import { groupMessagesForDisplay } from '@/lib/chatGrouping';
 import AuthModal from '@/components/AuthModal';
 import ChatBubble from '@/components/ChatBubble';
+import ChatHeader from '@/components/ChatHeader';
 import Layout from '@/components/Layout';
-import OnlineDot from '@/components/OnlineDot';
 
 export default function SupportChatPage() {
   const navigate = useNavigate();
@@ -178,6 +179,8 @@ export default function SupportChatPage() {
     }
   };
 
+  const displayItems = useMemo(() => groupMessagesForDisplay(messages), [messages]);
+
   if (!session) {
     return (
       <Layout>
@@ -206,26 +209,22 @@ export default function SupportChatPage() {
   return (
     <Layout hideNav>
       <div className="flex h-dvh flex-col bg-[#202020] md:bg-[#f6f6f6]">
-        <header className="shrink-0 bg-white text-[#202020] border-b border-[#e8e8e8] pt-safe">
-          <div className="mx-auto flex max-w-[1040px] items-center gap-3 px-4 py-3">
-            <button onClick={() => navigate(-1)} aria-label="Назад" className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#f1f1f1] active:scale-95">
-              <ArrowLeft size={17} />
-            </button>
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#ff5a82] text-white">
+        <ChatHeader
+          onBack={() => navigate(-1)}
+          avatar={
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#ff5a82] text-white">
               <Headphones size={19} />
             </div>
-            <div>
-              <p className="font-black">Поддержка</p>
-              <p className="flex items-center gap-1.5 text-sm text-[#4773d8]"><OnlineDot /> онлайн</p>
-            </div>
-          </div>
-        </header>
+          }
+          title="Поддержка"
+          status="онлайн"
+        />
 
         <main className="flex min-h-0 w-full flex-1 flex-col bg-[#f6f6f6]">
           <div className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col px-4 md:px-6">
           <div className="flex-1 overflow-y-auto py-5">
             {messages.length === 0 && (
-              <div className="mx-auto mt-16 max-w-md rounded-[18px] border border-[#e5e5e5] bg-white p-6 text-center text-[#202020]">
+              <div className="mx-auto mt-16 max-w-md rounded-[18px] border border-[#e5e5e5] bg-white p-6 text-center text-[#202020] shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
                 <ShieldCheck size={28} className="mx-auto mb-3 text-[#ff5a82]" />
                 <p className="text-xl font-black">Напишите в поддержку</p>
                 <p className="mt-2 text-sm text-[#777]">Здесь подтверждаются заказы, подписки и вопросы по оплате.</p>
@@ -243,9 +242,15 @@ export default function SupportChatPage() {
                 </div>
               </div>
             )}
-            {messages.map((msg) => (
-              <ChatBubble key={msg.id} message={msg} isOwn={msg.sender === 'client'} />
-            ))}
+            {displayItems.map((item) =>
+              item.type === 'divider' ? (
+                <div key={item.key} className="my-3 flex items-center justify-center">
+                  <span className="rounded-full bg-black/[0.06] px-3 py-1 text-[11px] font-semibold text-[#666]">{item.label}</span>
+                </div>
+              ) : (
+                <ChatBubble key={item.key} message={item.message} isOwn={item.message.sender === 'client'} showTail={item.showTail} />
+              )
+            )}
             <div ref={bottomRef} />
           </div>
 
@@ -257,7 +262,7 @@ export default function SupportChatPage() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={sending || uploading}
                 aria-label="Прикрепить файл"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#dedede] bg-[#f7f7f7] text-[#555] disabled:opacity-50"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#e2e2e2] bg-[#f7f7f7] text-[#555] transition-colors hover:bg-[#f0f0f0] disabled:opacity-50"
               >
                 {uploading ? <Loader2 size={17} className="animate-spin" /> : <Paperclip size={17} />}
               </button>
@@ -269,15 +274,15 @@ export default function SupportChatPage() {
                 placeholder="Сообщение поддержке..."
                 aria-label="Сообщение поддержке"
                 rows={1}
-                className="max-h-32 min-h-11 flex-1 resize-none rounded-xl border border-[#dedede] bg-[#f7f7f7] px-4 py-3 text-sm text-[#202020] outline-none focus:border-[#ff5a82]"
+                className="max-h-32 min-h-12 flex-1 resize-none rounded-2xl border border-[#e2e2e2] bg-[#f7f7f7] px-4 py-3.5 text-[15px] text-[#202020] outline-none transition-colors focus:border-[#ff5a82] focus:bg-white"
               />
               <button
                 type="submit"
                 disabled={!text.trim() || sending}
                 aria-label="Отправить сообщение"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#4773d8] text-white disabled:opacity-40"
+                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#4773d8] text-white transition-transform active:scale-95 disabled:opacity-40"
               >
-                <Send size={16} />
+                <Send size={17} />
               </button>
             </div>
           </form>

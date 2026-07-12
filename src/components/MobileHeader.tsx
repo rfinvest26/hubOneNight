@@ -27,7 +27,8 @@ export default function MobileHeader({ right, children }: Props) {
         </button>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/?change=1')}
+            aria-label="Изменить город"
             className="flex h-9 max-w-36 items-center gap-1.5 rounded-full bg-white/10 px-3 text-sm font-medium text-white/90 active:scale-95"
           >
             <MapPin size={14} className="shrink-0 text-[#ff5a82]" />

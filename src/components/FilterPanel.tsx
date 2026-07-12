@@ -1,5 +1,5 @@
 import { SlidersHorizontal, RotateCcw } from 'lucide-react';
-import { FilterState, AVAILABLE_SERVICES, PRICE_FILTER_MAX } from '@/types';
+import { FilterState, SERVICE_CATEGORIES, PRICE_FILTER_MAX } from '@/types';
 import BottomSheet from './BottomSheet';
 
 interface Props {
@@ -105,25 +105,37 @@ export default function FilterPanel({ open, filters, defaults, onChange, onClose
         />
 
         <div className="py-5">
-          <span className="mb-3 block text-base font-bold">Услуги</span>
-          <div className="flex flex-wrap gap-2">
-            {AVAILABLE_SERVICES.map((s) => {
-              const active = filters.services.includes(s);
-              return (
-                <button
-                  key={s}
-                  onClick={() => toggleService(s)}
-                  aria-pressed={active}
-                  className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
-                    active
-                      ? 'bg-[#ff5a82] text-white shadow-[0_4px_14px_rgba(255,90,130,0.35)]'
-                      : 'bg-[#f1f1f1] text-[#4a4a4a] hover:bg-[#e8e8e8]'
-                  }`}
-                >
-                  {s}
-                </button>
-              );
-            })}
+          <div className="mb-1 flex items-baseline justify-between">
+            <span className="block text-base font-bold">Услуги</span>
+            {filters.services.length > 0 && (
+              <span className="text-sm font-semibold text-[#ff5a82]">Выбрано: {filters.services.length}</span>
+            )}
+          </div>
+          <div className="space-y-4">
+            {SERVICE_CATEGORIES.map(({ label, services }) => (
+              <div key={label}>
+                <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-[#9d9d9d]">{label}</span>
+                <div className="flex flex-wrap gap-2">
+                  {services.map((s) => {
+                    const active = filters.services.includes(s);
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => toggleService(s)}
+                        aria-pressed={active}
+                        className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition-all active:scale-95 ${
+                          active
+                            ? 'bg-[#ff5a82] text-white shadow-[0_4px_14px_rgba(255,90,130,0.35)]'
+                            : 'bg-[#f1f1f1] text-[#4a4a4a] hover:bg-[#e8e8e8]'
+                        }`}
+                      >
+                        {s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

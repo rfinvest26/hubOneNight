@@ -7,11 +7,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useApp } from '@/contexts/AppContext';
 import { Model, ModelSubscription, Review } from '@/types';
 import { resolveModelCity } from '@/lib/city';
+import { lookupCityCoordinates } from '@/data/cityCoordinates';
 import PhotoCarousel from '@/components/PhotoCarousel';
 import AuthModal from '@/components/AuthModal';
 import Layout from '@/components/Layout';
 import PageHeader from '@/components/PageHeader';
 import VerifiedBadge from '@/components/VerifiedBadge';
+import ModelLocationMap from '@/components/ModelLocationMap';
 
 function price(value: number | null | undefined, multiplier = 1) {
   return `$${Math.max(0, Math.round((value ?? 150) * multiplier))}`;
@@ -217,7 +219,20 @@ export default function ModelPage() {
       <Layout>
         <div className="min-h-dvh bg-white text-[#202020] flex flex-col items-center justify-center px-6 text-center">
           <p className="text-2xl font-black">Анкета не найдена</p>
-          <button onClick={() => navigate(-1)} className="mt-6 rounded-lg bg-[#4773d8] px-6 py-3 text-white">Вернуться назад</button>
+          <p className="mt-2 max-w-xs text-sm text-[#888]">
+            {code ? <>Код <span className="font-mono font-semibold text-[#202020]">{code.toUpperCase()}</span> не найден — возможно, анкета скрыта или в коде опечатка.</> : 'Проверьте ссылку и попробуйте ещё раз.'}
+          </p>
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+            {code && (
+              <button
+                onClick={() => navigate(`/catalog?q=${encodeURIComponent(code)}`)}
+                className="rounded-xl bg-[#ff5a82] px-6 py-3 font-semibold text-white active:scale-[0.98]"
+              >
+                Искать в каталоге
+              </button>
+            )}
+            <button onClick={() => navigate(-1)} className="rounded-xl bg-[#f1f1f1] px-6 py-3 font-semibold text-[#333] active:scale-[0.98]">Вернуться назад</button>
+          </div>
         </div>
       </Layout>
     );
@@ -334,6 +349,12 @@ export default function ModelPage() {
                   ))}
                 </div>
               </Section>
+
+              {(model.latitude != null || lookupCityCoordinates(displayCity)) && (
+                <Section title="Локация">
+                  <ModelLocationMap latitude={model.latitude} longitude={model.longitude} city={displayCity} label={`${model.name}, ${displayCity}`} />
+                </Section>
+              )}
 
               <section className="border-b border-[#eeeeee] bg-white py-5">
                 <h2 className="text-2xl font-black">О себе</h2>
