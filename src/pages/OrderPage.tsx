@@ -415,7 +415,20 @@ export default function OrderPage() {
             </aside>
 
             {/* Плавающий итог: сумма и главное действие всегда на виду */}
-            <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-lg -translate-x-1/2 border-t border-[#e8e8e8] bg-white/97 px-4 pt-3 pb-safe backdrop-blur md:hidden">
+            <div className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 border-y border-[#e8e8e8] bg-white/97 px-4 py-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] backdrop-blur md:hidden">
+              <AnimatePresence>
+                {formError && (
+                  <motion.p
+                    role="alert"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 6 }}
+                    className="mb-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600"
+                  >
+                    {formError}
+                  </motion.p>
+                )}
+              </AnimatePresence>
               <div className="flex items-center gap-3">
                 <div className="min-w-0">
                   <p className="text-[12px] font-semibold uppercase tracking-wide text-[#9a9a9a]">К оплате</p>
@@ -424,8 +437,9 @@ export default function OrderPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="h-13 flex-1 rounded-xl bg-[#4773d8] text-base font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+                  className="inline-flex h-13 flex-1 items-center justify-center gap-2 rounded-xl bg-[#4773d8] px-3 text-base font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
                 >
+                  {!submitting && paymentMethod === 'online' && <CreditCard size={18} />}
                   {submitting ? 'Отправляем...' : paymentMethod === 'online' ? 'Перейти к оплате' : 'Оформить заказ'}
                 </button>
               </div>

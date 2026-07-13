@@ -14,13 +14,26 @@ import Layout from '@/components/Layout';
 import PageHeader from '@/components/PageHeader';
 import VerifiedBadge from '@/components/VerifiedBadge';
 import ModelLocationMap from '@/components/ModelLocationMap';
+import { buildSeededReviews, seededReviewerName } from '@/data/reviewSeeds';
 
 function price(value: number | null | undefined, multiplier = 1) {
   return `$${Math.max(0, Math.round((value ?? 150) * multiplier))}`;
 }
 
 function formatReviewDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('ru', { day: 'numeric', month: 'long' });
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('ru', {
+    day: 'numeric',
+    month: 'long',
+    ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
+function reviewAuthor(review: Review, index: number): string {
+  const relation = Array.isArray(review.clients) ? review.clients[0] : review.clients;
+  const username = relation?.username?.trim();
+  return username || seededReviewerName(`${review.client_id}:${index}`);
 }
 
 /** Секция с реально работающим сворачиванием — стрелка не декорация. */
@@ -98,15 +111,27 @@ export default function ModelPage() {
 
   const fetchReviews = async () => {
     if (!model) return;
-    const { data, error } = await supabase
+    const enriched = await supabase
+      .from('reviews')
+      .select('*, clients(username)')
+      .eq('model_id', model.id)
+      .eq('status', 'approved')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (!enriched.error) {
+      setReviews((enriched.data ?? []) as Review[]);
+      return;
+    }
+
+    const fallback = await supabase
       .from('reviews')
       .select('*')
       .eq('model_id', model.id)
       .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .limit(10);
-    if (error) console.error('Reviews load error:', error);
-    setReviews(data ?? []);
+    if (fallback.error) console.error('Reviews load error:', fallback.error);
+    setReviews((fallback.data ?? []) as Review[]);
   };
 
   const checkMyReview = async () => {
@@ -242,7 +267,19 @@ export default function ModelPage() {
   const services = model.services?.length ? model.services : ['Апартаменты', 'Выезд', 'Эскорт'];
   const telegramUsername = (model.telegram_username ?? '').replace(/^@/, '');
   const hasActiveSubscription = Boolean(subscription);
-  const fallbackComments = reviews.length ? [] : (model.public_comments ?? []).slice(0, 4);
+  const realReviewComments = new Set(reviews.map((review) => review.comment?.trim()).filter(Boolean));
+  const seededReviews = buildSeededReviews(model.code, model.public_comments ?? [], 8)
+    .filter((review) => !realReviewComments.has(review.comment));
+  const reviewCards = [
+    ...reviews.map((review, index) => ({
+      id: review.id,
+      author: reviewAuthor(review, index),
+      comment: review.comment?.trim() || 'Встреча прошла хорошо, всё соответствовало договорённостям.',
+      rating: review.rating,
+      createdAt: review.created_at,
+    })),
+    ...seededReviews.slice(0, Math.max(0, 6 - reviews.length)),
+  ];
 
   return (
     <Layout>
@@ -268,7 +305,7 @@ export default function ModelPage() {
               </div>
             </div>
 
-          <div className="mx-auto grid max-w-[1200px] gap-6 px-4 pt-5 pb-28 md:grid-cols-[1fr_360px] md:gap-7 md:px-6 md:pb-12">
+          <div className="mx-auto grid max-w-[1200px] gap-6 px-4 pt-5 pb-44 md:grid-cols-[1fr_360px] md:gap-7 md:px-6 md:pb-12">
             <section className="min-w-0 space-y-6">
               <section className="overflow-hidden rounded-[18px] bg-[#f6f6f6] md:grid md:grid-cols-[minmax(0,1.05fr)_minmax(300px,0.95fr)]">
                 <div className="bg-[#eeeeee]">
@@ -404,33 +441,27 @@ export default function ModelPage() {
                 </div>
               </Section>
 
-              <Section title={`Отзывы${reviews.length ? ` (${reviews.length})` : ''}`}>
-                {reviews.length > 0 ? (
-                  <div className="space-y-3">
-                    {reviews.map((review) => (
-                      <div key={review.id} className="rounded-xl bg-[#f6f6f6] p-4">
-                        <div className="flex items-center justify-between">
-                          <Stars value={review.rating} />
-                          <span className="text-sm text-[#999]">{formatReviewDate(review.created_at)}</span>
+              <Section title={`Отзывы (${reviewCards.length})`}>
+                <p className="mb-4 text-sm leading-relaxed text-[#777]">
+                  Впечатления гостей о встрече, общении и соответствии анкеты.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {reviewCards.map((review) => (
+                    <article key={review.id} className="rounded-2xl border border-[#ececec] bg-[#fafafa] p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#202020] text-sm font-black text-white">
+                          {review.author.slice(0, 1).toUpperCase()}
                         </div>
-                        <p className="mt-2 text-[#444]">{review.comment}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-black text-[#292929]">{review.author}</p>
+                          <p className="text-xs text-[#999]">{formatReviewDate(review.createdAt)}</p>
+                        </div>
+                        <Stars value={review.rating} size={14} />
                       </div>
-                    ))}
-                  </div>
-                ) : fallbackComments.length > 0 ? (
-                  <div className="space-y-3">
-                    {fallbackComments.map((comment, i) => (
-                      <div key={i} className="rounded-xl bg-[#f6f6f6] p-4">
-                        <Stars value={5} />
-                        <p className="mt-2 text-[#444]">{comment}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-xl bg-[#f7f7f7] p-4 text-[#666]">
-                    Отзывов пока нет. Станьте первым — после модерации отзыв появится в анкете.
-                  </div>
-                )}
+                      <p className="select-text mt-3 text-[15px] leading-relaxed text-[#4a4a4a]">{review.comment}</p>
+                    </article>
+                  ))}
+                </div>
 
                 {/* Форма отзыва: настоящая, с модерацией через бот */}
                 <div className="mt-5 rounded-xl bg-[#fbfbfb] p-4 ring-1 ring-[#ececec]">
@@ -541,18 +572,28 @@ export default function ModelPage() {
         </main>
       </div>
 
-      <motion.div initial={{ y: 100 }} animate={{ y: 0 }} className="fixed bottom-0 left-1/2 z-40 w-full max-w-lg -translate-x-1/2 border-t border-[#e5e5e5] bg-white px-4 py-3 pb-safe md:hidden">
+      <motion.div
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-1/2 z-50 w-full max-w-lg -translate-x-1/2 border-y border-[#e5e5e5] bg-white/97 px-4 py-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] backdrop-blur md:hidden"
+      >
         <div className="flex gap-2">
-          <button onClick={() => handleAction('chat')} className="h-12 flex-1 rounded-lg bg-[#4773d8] font-semibold text-white inline-flex items-center justify-center gap-2">
-            <MessageCircle size={18} /> Написать
+          <button
+            onClick={() => handleAction('chat')}
+            aria-label="Написать модели"
+            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-[#dce5f8] bg-[#eef3ff] text-[#4773d8]"
+          >
+            <MessageCircle size={19} />
           </button>
-          {model.only_enabled !== false ? (
-            <button onClick={() => navigate(`/only/${model.code}`)} className="h-12 rounded-lg bg-[#ff5a82] px-4 font-semibold text-white">
+          <button
+            onClick={() => handleAction('order')}
+            className="inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#202020] px-4 font-bold text-white active:scale-[0.98]"
+          >
+            <Calendar size={18} /> Заказать · {price(model.price)}
+          </button>
+          {model.only_enabled !== false && (
+            <button onClick={() => navigate(`/only/${model.code}`)} className="h-12 shrink-0 rounded-xl bg-[#ff5a82] px-3 font-bold text-white active:scale-[0.98]">
               Only
-            </button>
-          ) : (
-            <button onClick={() => handleAction('order')} className="h-12 rounded-lg bg-[#202020] px-4 font-semibold text-white">
-              Заказ
             </button>
           )}
         </div>

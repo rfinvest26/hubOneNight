@@ -132,6 +132,7 @@ export interface Review {
   comment: string | null;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
+  clients?: { username: string | null } | Array<{ username: string | null }> | null;
 }
 
 export interface Favorite {
