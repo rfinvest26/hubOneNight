@@ -350,11 +350,23 @@ export default function ModelPage() {
                 </div>
               </Section>
 
-              {(model.latitude != null || lookupCityCoordinates(displayCity)) && (
-                <Section title="Локация">
-                  <ModelLocationMap latitude={model.latitude} longitude={model.longitude} city={displayCity} label={`${model.name}, ${displayCity}`} />
-                </Section>
-              )}
+              <Section title="Локация">
+                {model.location_visible === false ? (
+                  <div className="rounded-2xl bg-[#f7f7f7] px-5 py-6 text-[#777]">
+                    <p className="font-semibold text-[#202020]">Местоположение скрыто</p>
+                    <p className="mt-1">Модель не поделилась своей геопозицией.</p>
+                  </div>
+                ) : (model.latitude != null || lookupCityCoordinates(displayCity)) ? (
+                  <>
+                    {model.latitude != null && model.longitude != null && (
+                      <p className="mb-3 text-sm text-[#777]">Координаты: {model.latitude}, {model.longitude}</p>
+                    )}
+                    <ModelLocationMap latitude={model.latitude} longitude={model.longitude} city={displayCity} label={`${model.name}, ${displayCity}`} />
+                  </>
+                ) : (
+                  <p className="text-[#777]">Геопозиция пока не указана.</p>
+                )}
+              </Section>
 
               <section className="border-b border-[#eeeeee] bg-white py-5">
                 <h2 className="text-2xl font-black">О себе</h2>

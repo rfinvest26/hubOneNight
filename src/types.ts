@@ -17,6 +17,7 @@ export interface Model {
   /** Точная геометка из Google Maps-ссылки, задаётся воркером в боте. Нет — сайт покажет примерный центр города (cityCoordinates.ts). */
   latitude?: number | null;
   longitude?: number | null;
+  location_visible?: boolean | null;
   height: number | null;
   weight: number | null;
   description: string | null;

@@ -27,7 +27,7 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 const SORT_OPTIONS: Array<{ value: CatalogSort; label: string }> = [
-  { value: 'new', label: 'Сначала новые' },
+  { value: 'new', label: 'Случайный порядок' },
   { value: 'price_asc', label: 'Дешевле' },
   { value: 'price_desc', label: 'Дороже' },
   { value: 'rating', label: 'По рейтингу' },
@@ -86,7 +86,12 @@ export default function CatalogPage() {
       .eq('catalog_visible', true)
       .order('created_at', { ascending: false });
     if (error) console.error('Catalog load error:', error);
-    setModels(data ?? []);
+    const shuffled = [...(data ?? [])];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    setModels(shuffled);
     setLoading(false);
   };
 

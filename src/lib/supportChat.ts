@@ -17,21 +17,17 @@ export async function ensureOpenSupportChat(clientId: string, workerId?: number 
 
   let finalWorkerId = workerId;
   if (!finalWorkerId) {
-    // Cannot read `workers` directly due to RLS, but anon can read `clients`
+    // Берём владельца именно этого клиента, а не случайного клиента из таблицы.
     const { data: clientWithWorker } = await supabase
       .from('clients')
       .select('worker_id')
+      .eq('id', clientId)
       .not('worker_id', 'is', null)
-      .limit(1)
       .maybeSingle();
     finalWorkerId = clientWithWorker?.worker_id;
   }
 
-  if (!finalWorkerId) {
-    // If absolutely no worker_id is found anywhere, fallback to a dummy ID 
-    // to bypass NOT NULL constraint (though it might drop messages if no such bot worker exists)
-    finalWorkerId = 1;
-  }
+  if (!finalWorkerId) return null;
 
   const insertData: Record<string, unknown> = { client_id: clientId, status: 'open', worker_id: finalWorkerId };
   const { data, error } = await supabase.from('support_chats').insert(insertData).select('id').single();

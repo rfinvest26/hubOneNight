@@ -409,7 +409,7 @@ export default function OrderPage() {
                 </AnimatePresence>
                 {/* На десктопе кнопка в сводке; на телефоне — в плавающей панели снизу */}
                 <button type="submit" disabled={submitting} className="mt-5 hidden h-14 w-full rounded-xl bg-[#4773d8] text-lg font-bold text-white transition-transform active:scale-[0.99] disabled:opacity-50 md:block">
-                  {submitting ? 'Отправляем...' : 'Отправить заказ'}
+                  {submitting ? 'Отправляем...' : paymentMethod === 'online' ? 'Перейти к оплате' : 'Оформить заказ'}
                 </button>
               </div>
             </aside>
@@ -426,7 +426,7 @@ export default function OrderPage() {
                   disabled={submitting}
                   className="h-13 flex-1 rounded-xl bg-[#4773d8] text-base font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
                 >
-                  {submitting ? 'Отправляем...' : 'Отправить заказ'}
+                  {submitting ? 'Отправляем...' : paymentMethod === 'online' ? 'Перейти к оплате' : 'Оформить заказ'}
                 </button>
               </div>
             </div>
