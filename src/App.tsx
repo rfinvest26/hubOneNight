@@ -13,6 +13,7 @@ import ProfilePage from '@/pages/ProfilePage';
 import OrderPage from '@/pages/OrderPage';
 import ModelChatPage from '@/pages/ModelChatPage';
 import SupportChatPage from '@/pages/SupportChatPage';
+import { canonicalModelCode } from '@/lib/modelCode';
 
 function RouterSetup() {
   const navigate = useNavigate();
@@ -23,7 +24,7 @@ function RouterSetup() {
     const params = new URLSearchParams(window.location.search);
     const modelCode = params.get('model');
     if (modelCode) {
-      navigate(`/model/${modelCode.toUpperCase()}`, { replace: true });
+      navigate(`/model/${encodeURIComponent(canonicalModelCode(modelCode) ?? modelCode.trim().toUpperCase())}`, { replace: true });
     }
   }, [pathname, navigate]);
 

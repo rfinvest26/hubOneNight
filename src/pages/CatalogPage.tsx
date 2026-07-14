@@ -12,6 +12,7 @@ import MobileHeader from '@/components/MobileHeader';
 import ModelCard from '@/components/ModelCard';
 import FilterPanel from '@/components/FilterPanel';
 import BottomSheet from '@/components/BottomSheet';
+import { compactModelCode, findModelByFlexibleCode } from '@/lib/modelCode';
 
 const DEFAULT_FILTERS: FilterState = {
   city: '',
@@ -58,6 +59,11 @@ export default function CatalogPage() {
 
   useEffect(() => { fetchModels(); }, []);
   useEffect(() => { if (session) fetchFavorites(); }, [session]);
+  useEffect(() => {
+    if (loading || !searchQuery.trim()) return;
+    const exactModel = findModelByFlexibleCode(models, searchQuery);
+    if (exactModel?.code) navigate(`/model/${encodeURIComponent(exactModel.code)}`, { replace: true });
+  }, [loading, models, searchQuery, navigate]);
 
   /* Синхронизация с URL: поиск из TopNav и быстрые категории. */
   useEffect(() => {
@@ -128,7 +134,9 @@ export default function CatalogPage() {
     const list = models.filter((m) => {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
-        if (!m.name?.toLowerCase().includes(query) && !m.code?.toLowerCase().includes(query)) return false;
+        const compactQuery = compactModelCode(searchQuery);
+        const compactCode = compactModelCode(m.code);
+        if (!m.name?.toLowerCase().includes(query) && !m.code?.toLowerCase().includes(query) && !compactCode.includes(compactQuery)) return false;
       }
       const price = modelPrice(m);
       if (price < filters.priceMin) return false;

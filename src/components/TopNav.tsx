@@ -3,6 +3,7 @@ import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { BadgeCheck, Headphones, Heart, MapPin, Search, SlidersHorizontal, User } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { canonicalModelCode } from '@/lib/modelCode';
 
 const categories: Array<{ label: string; service?: string }> = [
   { label: 'Все модели' },
@@ -23,7 +24,8 @@ export default function TopNav() {
 
   const submitSearch = () => {
     const q = query.trim();
-    navigate(q ? `/catalog?q=${encodeURIComponent(q)}` : '/catalog');
+    const canonical = canonicalModelCode(q);
+    navigate(canonical ? `/model/${encodeURIComponent(canonical)}` : q ? `/catalog?q=${encodeURIComponent(q)}` : '/catalog');
   };
 
   const activeService = pathname.startsWith('/catalog') ? searchParams.get('service') : null;

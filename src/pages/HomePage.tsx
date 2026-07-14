@@ -4,6 +4,7 @@ import { ArrowRight, Headphones, Search, ShieldCheck, SlidersHorizontal, Star } 
 import { useApp } from '@/contexts/AppContext';
 import Layout from '@/components/Layout';
 import MobileHeader from '@/components/MobileHeader';
+import { canonicalModelCode } from '@/lib/modelCode';
 
 const QUICK_CATEGORIES = ['Эскорт', 'Массаж', 'Выезд', 'Апартаменты', 'Классика', 'БДСМ', 'Анал', 'Стриптиз'];
 
@@ -14,15 +15,13 @@ export default function HomePage() {
   const [error, setError] = useState('');
 
   const searchByCode = () => {
-    const value = code.trim().toUpperCase();
+    const value = code.trim();
     if (!value) {
       setError('Введите код анкеты');
       return;
     }
-    // Ведём через обычный поиск каталога (тот же q=, что и в шапке), а не
-    // напрямую на /model/CODE — опечатка тогда покажет пустой каталог с
-    // возможностью поправить запрос, а не тупиковый экран «не найдено».
-    navigate(`/catalog?q=${encodeURIComponent(value)}`);
+    const canonical = canonicalModelCode(value);
+    navigate(canonical ? `/model/${encodeURIComponent(canonical)}` : `/catalog?q=${encodeURIComponent(value)}`);
   };
 
   return (
@@ -85,7 +84,7 @@ export default function HomePage() {
           <section className="px-4 py-5 md:px-6">
             <div className="rounded-2xl bg-[#f7f7f7] p-4 md:p-5">
               <p className="text-base font-extrabold">Есть код анкеты?</p>
-              <p className="mt-1 text-sm text-[#888]">Введите код из объявления — работает так же, как обычный поиск в каталоге.</p>
+              <p className="mt-1 text-sm text-[#888]">Можно вставить весь текст из объявления, код с пробелами или без ON — анкета откроется сразу.</p>
               <div className="mt-3 flex gap-2">
                 <div className="relative min-w-0 flex-1">
                   <Search size={17} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#9d9d9d]" />

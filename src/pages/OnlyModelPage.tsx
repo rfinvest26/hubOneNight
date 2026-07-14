@@ -10,6 +10,7 @@ import AuthModal from '@/components/AuthModal';
 import Layout from '@/components/Layout';
 import PageHeader from '@/components/PageHeader';
 import VerifiedBadge from '@/components/VerifiedBadge';
+import { canonicalModelCode, findModelByFlexibleCode } from '@/lib/modelCode';
 
 export default function OnlyModelPage() {
   const { code } = useParams<{ code: string }>();
@@ -28,14 +29,22 @@ export default function OnlyModelPage() {
   const fetchModel = async () => {
     if (!code) return;
     setLoading(true);
-    const { data, error: fetchError } = await supabase
+    const decodedCode = decodeURIComponent(code);
+    const canonical = canonicalModelCode(decodedCode) ?? decodedCode.trim().toUpperCase();
+    let { data, error: fetchError } = await supabase
       .from('models')
       .select('*')
-      .eq('code', code.toUpperCase())
+      .eq('code', canonical)
       .eq('active', true)
       .maybeSingle();
+    if (!data && !fetchError) {
+      const fallback = await supabase.from('models').select('*').eq('active', true);
+      data = findModelByFlexibleCode((fallback.data ?? []) as Model[], decodedCode);
+      fetchError = fallback.error;
+    }
     if (fetchError) console.error('Only model fetch error:', fetchError);
-    setModel(data);
+    setModel(data as Model | null);
+    if (data?.code && data.code !== code) navigate(`/only/${encodeURIComponent(data.code)}`, { replace: true });
     setLoading(false);
   };
 

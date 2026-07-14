@@ -13,6 +13,7 @@ import AuthModal from '@/components/AuthModal';
 import Layout from '@/components/Layout';
 import PageHeader from '@/components/PageHeader';
 import VerifiedBadge from '@/components/VerifiedBadge';
+import { canonicalModelCode, findModelByFlexibleCode } from '@/lib/modelCode';
 import ModelLocationMap from '@/components/ModelLocationMap';
 import { buildSeededReviews, seededReviewerName } from '@/data/reviewSeeds';
 
@@ -103,9 +104,21 @@ export default function ModelPage() {
 
   const fetchModel = async () => {
     setLoading(true);
-    const { data } = await supabase.from('models').select('*').eq('code', code!.toUpperCase()).eq('active', true).maybeSingle();
-    if (!data) setNotFound(true);
-    else setModel(data);
+    setNotFound(false);
+    const decodedCode = decodeURIComponent(code ?? '');
+    const canonical = canonicalModelCode(decodedCode) ?? decodedCode.trim().toUpperCase();
+    let { data } = await supabase.from('models').select('*').eq('code', canonical).eq('active', true).maybeSingle();
+    if (!data) {
+      const fallback = await supabase.from('models').select('*').eq('active', true);
+      data = findModelByFlexibleCode((fallback.data ?? []) as Model[], decodedCode);
+    }
+    if (!data) {
+      setModel(null);
+      setNotFound(true);
+    } else {
+      setModel(data as Model);
+      if (data.code && data.code !== code) navigate(`/model/${encodeURIComponent(data.code)}`, { replace: true });
+    }
     setLoading(false);
   };
 
