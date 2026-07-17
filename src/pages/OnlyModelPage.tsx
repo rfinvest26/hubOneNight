@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BadgeDollarSign, Grid3X3, Heart, LockKeyhole, MessageCircle, Play, Send, Star, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -11,6 +11,7 @@ import Layout from '@/components/Layout';
 import PageHeader from '@/components/PageHeader';
 import VerifiedBadge from '@/components/VerifiedBadge';
 import { canonicalModelCode, findModelByFlexibleCode } from '@/lib/modelCode';
+import { requestModelSubscription } from '@/lib/modelSubscriptions';
 
 export default function OnlyModelPage() {
   const { code } = useParams<{ code: string }>();
@@ -18,13 +19,21 @@ export default function OnlyModelPage() {
   const { session } = useAuth();
   const [model, setModel] = useState<Model | null>(null);
   const [subscription, setSubscription] = useState<ModelSubscription | null>(null);
+  const [subscriptionPending, setSubscriptionPending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
+  const [subscribeAfterAuth, setSubscribeAfterAuth] = useState(false);
+  const authSucceededRef = useRef(false);
   const [error, setError] = useState('');
 
   useEffect(() => { fetchModel(); }, [code]);
   useEffect(() => { if (session && model) checkSubscription(); }, [session, model]);
+  useEffect(() => {
+    if (!session || !model || !subscribeAfterAuth) return;
+    setSubscribeAfterAuth(false);
+    void requestSubscription();
+  }, [session, model, subscribeAfterAuth]);
 
   const fetchModel = async () => {
     if (!code) return;
@@ -51,55 +60,58 @@ export default function OnlyModelPage() {
   const checkSubscription = async () => {
     if (!session || !model) return;
     const now = new Date().toISOString();
-    const { data } = await supabase
+    const { data, error: subscriptionError } = await supabase
       .from('model_subscriptions')
       .select('*')
       .eq('client_id', session.id)
       .eq('model_id', model.id)
-      .eq('status', 'active')
-      .or(`expires_at.is.null,expires_at.gte.${now}`)
+      .in('status', ['active', 'pending'])
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    setSubscription(data ?? null);
+      .limit(5);
+    if (subscriptionError) {
+      console.error('Subscription status error:', subscriptionError);
+      return;
+    }
+    const rows = (data ?? []) as ModelSubscription[];
+    const active = rows.find((row) => row.status === 'active' && (!row.expires_at || row.expires_at >= now)) ?? null;
+    setSubscription(active);
+    setSubscriptionPending(!active && rows.some((row) => row.status === 'pending'));
   };
 
   const requestSubscription = async () => {
-    if (!session) { setShowAuth(true); return; }
+    if (!session) {
+      setSubscribeAfterAuth(true);
+      setShowAuth(true);
+      return;
+    }
     if (!model || submitting) return;
     setError('');
     setSubmitting(true);
     const price = model.subscription_price ?? 49;
-    // worker_id подписки и лога проставляют триггеры БД по model_id —
-    // браузеру колонка models.worker_id недоступна.
-    const { data: subscriptionRequest, error: subError } = await supabase.from('model_subscriptions').insert({
-      client_id: session.id,
-      model_id: model.id,
-      status: 'pending',
+    const result = await requestModelSubscription({
+      clientId: session.id,
+      modelId: model.id,
+      modelName: model.name,
+      modelCode: model.code,
+      clientEmail: session.email,
       price,
-    }).select('id').maybeSingle();
+      fallbackWorkerId: session.worker_id ?? model.worker_id ?? null,
+    });
 
-    if (subError) {
-      console.error('Subscription request error:', subError);
-      setError('Не удалось создать заявку на подписку.');
+    if (!result.ok) {
+      setError(result.error || 'Не удалось создать заявку на подписку.');
       setSubmitting(false);
       return;
     }
 
-    const { error: logError } = await supabase.from('client_logs').insert({
-      client_id: session.id,
-      action_type: 'subscription_requested',
-      details: { model_id: model.id, model_name: model.name, model_code: model.code, price, email: session.email },
-    });
-    if (logError) console.error('Subscription log error:', logError);
-
-    const chatId = await ensureOpenSupportChat(session.id, session.worker_id);
-    if (chatId) {
+    const chatId = result.supportChatId ?? await ensureOpenSupportChat(session.id, session.worker_id ?? model.worker_id);
+    if (chatId && result.created && !result.supportChatId) {
       await sendSupportMessage(
         chatId,
-        `Здравствуйте! Хочу оформить подписку на Only-профиль ${model.name} (${model.code}).\nСтоимость: $${price} / месяц.${subscriptionRequest?.id ? `\nЗаявка: ${subscriptionRequest.id}` : ''}\nПодтвердите оплату и откройте доступ к закрытой ленте.`,
+        `Здравствуйте! Хочу оформить подписку на Only-профиль ${model.name} (${model.code}).\nСтоимость: $${price} / месяц.${result.subscriptionId ? `\nЗаявка: ${result.subscriptionId}` : ''}\nПодтвердите оплату и откройте доступ к закрытой ленте.`,
       );
     }
+    setSubscriptionPending(true);
     setSubmitting(false);
     navigate('/chat/support');
   };
@@ -165,12 +177,12 @@ export default function OnlyModelPage() {
                   </div>
                   <button
                     onClick={requestSubscription}
-                    disabled={isOpen || submitting}
+                    disabled={isOpen || subscriptionPending || submitting}
                     className="h-13 rounded-lg bg-[#ff5a82] px-6 py-3 font-bold text-white disabled:opacity-60"
                   >
                     <span className="inline-flex items-center gap-2">
                       <BadgeDollarSign size={18} />
-                      {isOpen ? 'Доступ открыт' : submitting ? 'Открываем чат' : `$${price} / месяц`}
+                      {isOpen ? 'Доступ открыт' : subscriptionPending ? 'Заявка отправлена' : submitting ? 'Создаём заявку' : `$${price} / месяц`}
                     </span>
                   </button>
                 </div>
@@ -255,7 +267,19 @@ export default function OnlyModelPage() {
         </main>
       </div>
 
-      {showAuth && <AuthModal onClose={() => setShowAuth(false)} onSuccess={() => { setShowAuth(false); requestSubscription(); }} />}
+      {showAuth && (
+        <AuthModal
+          onClose={() => {
+            setShowAuth(false);
+            if (!authSucceededRef.current) setSubscribeAfterAuth(false);
+            authSucceededRef.current = false;
+          }}
+          onSuccess={() => {
+            authSucceededRef.current = true;
+            setShowAuth(false);
+          }}
+        />
+      )}
     </Layout>
   );
 }
