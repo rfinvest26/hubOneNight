@@ -147,7 +147,7 @@ export default function OnlyModelPage() {
 
   return (
     <Layout>
-      <div className="flex min-h-screen flex-col bg-[#202020]">
+      <div className="flex min-h-dvh flex-col bg-[#202020]">
         <PageHeader title={model.only_title || model.name} subtitle={`@${model.code.toLowerCase()} · закрытая лента`} />
         <main className="flex-1 bg-white text-[#202020] md:rounded-t-[22px] md:rounded-none">
           <div className="mx-auto max-w-[1200px]">

@@ -169,7 +169,7 @@ export default function CatalogPage() {
 
   return (
     <Layout>
-      <div className="flex min-h-screen flex-col bg-[#202020]">
+      <div className="flex min-h-dvh flex-col bg-[#202020]">
         {/* Единая мобильная шапка приложения + поиск */}
         <MobileHeader
           right={

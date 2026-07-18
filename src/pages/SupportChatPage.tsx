@@ -1,15 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Headphones, Loader2, Paperclip, Send, ShieldCheck } from 'lucide-react';
+import { Headphones, ShieldCheck } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { SupportMessage } from '@/types';
 import { ensureOpenSupportChat } from '@/lib/supportChat';
-import { groupMessagesForDisplay } from '@/lib/chatGrouping';
+import { groupMessagesForDisplay, mergeMessagesById } from '@/lib/chatGrouping';
 import AuthModal from '@/components/AuthModal';
 import ChatBubble from '@/components/ChatBubble';
 import ChatHeader from '@/components/ChatHeader';
+import ChatComposer from '@/components/ChatComposer';
+import ChatViewport from '@/components/ChatViewport';
 import Layout from '@/components/Layout';
+import { useChatScroll } from '@/hooks/useChatScroll';
+
+const SUPPORT_FILE_LIMIT = 10 * 1024 * 1024;
+const SUPPORT_FILE_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const SUPPORT_FILE_EXTENSIONS: Record<string, string> = {
+  'application/pdf': 'pdf',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
 
 export default function SupportChatPage() {
   const navigate = useNavigate();
@@ -22,9 +35,8 @@ export default function SupportChatPage() {
   const [showAuth, setShowAuth] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const realtimeOk = useRef(false);
+  const { scrollRef, contentRef, handleScroll, scrollToBottom, hasNewMessages } = useChatScroll(messages.length);
 
   useEffect(() => {
     if (!session) {
@@ -32,20 +44,20 @@ export default function SupportChatPage() {
       setInitializing(false);
       return;
     }
+    setChatId(null);
+    setMessages([]);
+    setInitializing(true);
     initChat();
   }, [session]);
 
   useEffect(() => {
     if (!chatId) return;
+    realtimeOk.current = false;
     fetchMessages();
     const unsub = subscribeRealtime(chatId);
     const interval = setInterval(() => { if (!realtimeOk.current) fetchMessages(); }, 5000);
     return () => { unsub(); clearInterval(interval); };
   }, [chatId]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const initChat = async () => {
     if (!session) return;
@@ -80,9 +92,14 @@ export default function SupportChatPage() {
       .from('support_messages')
       .select('*')
       .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
-    if (msgError) console.error('Support messages fetch error:', msgError);
-    setMessages(data ?? []);
+      .order('created_at', { ascending: false })
+      .limit(300);
+    if (msgError) {
+      console.error('Support messages fetch error:', msgError);
+      setError('Не удалось обновить сообщения. Проверьте соединение.');
+      return;
+    }
+    setMessages((current) => mergeMessagesById(current, data ? [...data].reverse() : []));
   };
 
   const subscribeRealtime = (cid: string) => {
@@ -92,7 +109,7 @@ export default function SupportChatPage() {
         (payload) => {
           realtimeOk.current = true;
           const msg = payload.new as SupportMessage;
-          setMessages((prev) => prev.find((m) => m.id === msg.id) ? prev : [...prev, msg]);
+          setMessages((prev) => mergeMessagesById(prev, [msg]));
         }
       )
       .subscribe((status) => { realtimeOk.current = status === 'SUBSCRIBED'; });
@@ -116,67 +133,73 @@ export default function SupportChatPage() {
     if ((!trimmed && !attachFile) || sending || !session) return;
     setError('');
     setSending(true);
-    if (!attachFile) setText('');
+    setText('');
 
-    const cid = await ensureChatId();
-    if (!cid) { setSending(false); return; }
-
-    let file_url: string | null = null;
-    if (attachFile) {
-      setUploading(true);
-      const ext = attachFile.name.split('.').pop() || 'file';
-      const path = `support/${session.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage.from('public_photos').upload(path, attachFile);
-      if (uploadError) {
-        console.error('Support file upload error:', uploadError);
-        setError('Не удалось загрузить файл.');
-        setUploading(false);
-        setSending(false);
+    let optimisticId: string | null = null;
+    try {
+      const cid = await ensureChatId();
+      if (!cid) {
+        setText(trimmed);
         return;
       }
-      file_url = supabase.storage.from('public_photos').getPublicUrl(path).data.publicUrl;
+
+      let file_url: string | null = null;
+      if (attachFile) {
+        setUploading(true);
+        const ext = SUPPORT_FILE_EXTENSIONS[attachFile.type];
+        const path = `support/${session.id}/${generateUUID()}.${ext}`;
+        const { error: uploadError } = await supabase.storage.from('public_photos').upload(path, attachFile, {
+          contentType: attachFile.type,
+          upsert: false,
+        });
+        if (uploadError) throw uploadError;
+        file_url = supabase.storage.from('public_photos').getPublicUrl(path).data.publicUrl;
+      }
+
+      const newMsg: SupportMessage = {
+        id: generateUUID(),
+        chat_id: cid,
+        sender: 'client',
+        text: trimmed,
+        file_url,
+        tg_message_id: null,
+        is_read: false,
+        created_at: new Date().toISOString(),
+      };
+      optimisticId = newMsg.id;
+      setMessages((prev) => mergeMessagesById(prev, [newMsg]));
+
+      const { error: insertError } = await supabase.from('support_messages').insert({
+        id: newMsg.id,
+        chat_id: cid,
+        sender: 'client',
+        text: trimmed,
+        file_url,
+        is_read: false,
+      });
+      if (insertError) throw insertError;
+      requestAnimationFrame(() => scrollToBottom('smooth'));
+    } catch (sendError) {
+      console.error('Support message send error:', sendError);
+      if (optimisticId) setMessages((prev) => prev.filter((msg) => msg.id !== optimisticId));
+      setError(attachFile ? 'Не удалось отправить вложение. Попробуйте ещё раз.' : 'Сообщение не отправлено. Попробуйте ещё раз.');
+      setText(trimmed);
+    } finally {
       setUploading(false);
+      setSending(false);
     }
-
-    const newMsg: SupportMessage = {
-      id: generateUUID(),
-      chat_id: cid,
-      sender: 'client',
-      text: trimmed,
-      file_url,
-      tg_message_id: null,
-      is_read: false,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, newMsg]);
-
-    const { error: insertError } = await supabase.from('support_messages').insert({
-      id: newMsg.id,
-      chat_id: cid,
-      sender: 'client',
-      text: trimmed,
-      file_url,
-      is_read: false,
-    });
-    if (insertError) {
-      console.error('Support message insert error:', insertError);
-      setError('Сообщение не отправлено. Попробуйте ещё раз.');
-      setMessages((prev) => prev.filter((msg) => msg.id !== newMsg.id));
-    }
-    setSending(false);
   };
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) sendMessage(undefined, file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
+  const handleFile = (file: File) => {
+    if (file.size > SUPPORT_FILE_LIMIT) {
+      setError('Файл слишком большой. Максимальный размер — 10 МБ.');
+      return;
     }
+    if (!SUPPORT_FILE_TYPES.has(file.type)) {
+      setError('Можно отправить JPG, PNG, WEBP, GIF или PDF.');
+      return;
+    }
+    void sendMessage(undefined, file);
   };
 
   const displayItems = useMemo(() => groupMessagesForDisplay(messages), [messages]);
@@ -207,25 +230,41 @@ export default function SupportChatPage() {
   }
 
   return (
-    <Layout hideNav>
-      <div className="flex h-dvh flex-col bg-[#202020] md:bg-[#f6f6f6]">
+    <ChatViewport
+      header={
         <ChatHeader
-          onBack={() => navigate(-1)}
+          onBack={() => navigate('/profile?tab=support')}
           avatar={
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#ff5a82] text-white">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#4773d8] text-white">
               <Headphones size={19} />
             </div>
           }
           title="Поддержка"
           status="онлайн"
         />
-
-        <main className="flex min-h-0 w-full flex-1 flex-col bg-[#f6f6f6]">
-          <div className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col px-4 md:px-6">
-          <div className="flex-1 overflow-y-auto py-5">
+      }
+      composer={
+        <ChatComposer
+          text={text}
+          onTextChange={setText}
+          onSend={() => sendMessage()}
+          onFileSelect={handleFile}
+          placeholder="Сообщение поддержке"
+          busy={sending}
+          uploading={uploading}
+          error={error}
+          onFocus={() => setTimeout(() => scrollToBottom('smooth'), 120)}
+        />
+      }
+      scrollRef={scrollRef}
+      contentRef={contentRef}
+      onScroll={handleScroll}
+      hasNewMessages={hasNewMessages}
+      onShowLatest={() => scrollToBottom('smooth')}
+    >
             {messages.length === 0 && (
-              <div className="mx-auto mt-16 max-w-md rounded-[18px] border border-[#e5e5e5] bg-white p-6 text-center text-[#202020] shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
-                <ShieldCheck size={28} className="mx-auto mb-3 text-[#ff5a82]" />
+              <div className="mx-auto my-auto w-full max-w-md rounded-[20px] border border-[#dfded9] bg-white p-6 text-center text-[#202020] shadow-[0_14px_38px_rgba(30,30,28,0.06)]">
+                <ShieldCheck size={28} className="mx-auto mb-3 text-[#4773d8]" />
                 <p className="text-xl font-black">Напишите в поддержку</p>
                 <p className="mt-2 text-sm text-[#777]">Здесь подтверждаются заказы, подписки и вопросы по оплате.</p>
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -234,7 +273,7 @@ export default function SupportChatPage() {
                       key={question}
                       type="button"
                       onClick={() => setText(question)}
-                      className="rounded-lg bg-[#f1f1f1] px-3.5 py-2 text-sm font-medium text-[#444] transition-colors hover:bg-[#ffe4ed] hover:text-[#ff4f80]"
+                      className="rounded-lg bg-[#f1f1f1] px-3.5 py-2 text-sm font-medium text-[#444] transition-colors hover:bg-[#e8eefc] hover:text-[#315aad]"
                     >
                       {question}
                     </button>
@@ -244,51 +283,13 @@ export default function SupportChatPage() {
             )}
             {displayItems.map((item) =>
               item.type === 'divider' ? (
-                <div key={item.key} className="my-3 flex items-center justify-center">
-                  <span className="rounded-full bg-black/[0.06] px-3 py-1 text-[11px] font-semibold text-[#666]">{item.label}</span>
+                <div key={item.key} className="sticky top-2 z-[1] my-3 flex items-center justify-center">
+                  <span className="rounded-full border border-black/[0.04] bg-[#e9e8e4]/95 px-3 py-1 text-[11px] font-semibold text-[#666] backdrop-blur">{item.label}</span>
                 </div>
               ) : (
                 <ChatBubble key={item.key} message={item.message} isOwn={item.message.sender === 'client'} showTail={item.showTail} />
               )
             )}
-            <div ref={bottomRef} />
-          </div>
-
-          <form onSubmit={sendMessage} className="shrink-0 border-t border-[#e5e5e5] bg-white py-3 pb-safe">
-            {error && <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
-            <div className="flex items-end gap-2">
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={sending || uploading}
-                aria-label="Прикрепить файл"
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[#e2e2e2] bg-[#f7f7f7] text-[#555] transition-colors hover:bg-[#f0f0f0] disabled:opacity-50"
-              >
-                {uploading ? <Loader2 size={17} className="animate-spin" /> : <Paperclip size={17} />}
-              </button>
-              <input type="file" ref={fileInputRef} onChange={handleFile} className="hidden" accept="image/*,application/pdf" aria-label="Файл вложения" />
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={handleKey}
-                placeholder="Сообщение поддержке..."
-                aria-label="Сообщение поддержке"
-                rows={1}
-                className="max-h-32 min-h-12 flex-1 resize-none rounded-2xl border border-[#e2e2e2] bg-[#f7f7f7] px-4 py-3.5 text-[15px] text-[#202020] outline-none transition-colors focus:border-[#ff5a82] focus:bg-white"
-              />
-              <button
-                type="submit"
-                disabled={!text.trim() || sending}
-                aria-label="Отправить сообщение"
-                className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#4773d8] text-white transition-transform active:scale-95 disabled:opacity-40"
-              >
-                <Send size={17} />
-              </button>
-            </div>
-          </form>
-          </div>
-        </main>
-      </div>
-    </Layout>
+    </ChatViewport>
   );
 }

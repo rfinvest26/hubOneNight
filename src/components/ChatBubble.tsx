@@ -1,6 +1,5 @@
-import { motion } from 'framer-motion';
 import { ModelChatMessage, SupportMessage } from '@/types';
-import { Download, FileText } from 'lucide-react';
+import { CheckCheck, Download, FileText } from 'lucide-react';
 
 type AnyMessage = ModelChatMessage | SupportMessage;
 
@@ -25,20 +24,17 @@ function fileName(url: string): string {
 
 export default function ChatBubble({ message, isOwn, showTail = true }: Props) {
   const fileUrl = 'file_url' in message ? message.file_url : null;
-  const isImage = fileUrl && fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+  let filePath = fileUrl ?? '';
+  try { filePath = fileUrl ? new URL(fileUrl).pathname : ''; } catch { /* keep raw path */ }
+  const isImage = /\.(jpeg|jpg|gif|png|webp)$/i.test(filePath);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.18 }}
-      className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-1.5`}
-    >
+    <article className={`mb-1.5 flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[80%] sm:max-w-[65%] px-4 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] ${
+        className={`max-w-[86%] px-3.5 py-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.05)] sm:max-w-[72%] lg:max-w-[66%] ${
           isOwn
-            ? `bg-[#4773d8] text-white rounded-2xl ${showTail ? 'rounded-br-md' : 'rounded-br-2xl'}`
-            : `bg-white border border-[#eaeaea] text-[#202020] rounded-2xl ${showTail ? 'rounded-bl-md' : 'rounded-bl-2xl'}`
+            ? `bg-[#4773d8] text-white rounded-[18px] ${showTail ? 'rounded-br-[5px]' : 'rounded-br-[18px]'}`
+            : `bg-white border border-[#e5e4e0] text-[#202020] rounded-[18px] ${showTail ? 'rounded-bl-[5px]' : 'rounded-bl-[18px]'}`
         }`}
       >
         {fileUrl && (
@@ -66,10 +62,10 @@ export default function ChatBubble({ message, isOwn, showTail = true }: Props) {
         {message.text && (
           <p className="select-text text-[14.5px] leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
         )}
-        <span className={`text-[10px] mt-1 block text-right tracking-wide ${isOwn ? 'text-white/70' : 'text-[#a3a3a3]'}`}>
-          {formatTime(message.created_at)}
+        <span className={`mt-1 flex items-center justify-end gap-1 text-[10px] tracking-wide ${isOwn ? 'text-white/70' : 'text-[#989894]'}`}>
+          {formatTime(message.created_at)} {isOwn && <CheckCheck size={12} aria-label={message.is_read ? 'Прочитано' : 'Доставлено'} className={message.is_read ? 'text-white' : 'text-white/55'} />}
         </span>
       </div>
-    </motion.div>
+    </article>
   );
 }

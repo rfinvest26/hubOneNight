@@ -132,7 +132,7 @@ export default function ProfilePage() {
 
   return (
     <Layout>
-      <div className="flex min-h-screen flex-col bg-[#202020]">
+      <div className="flex min-h-dvh flex-col bg-[#202020]">
         <MobileHeader
           right={
             <button

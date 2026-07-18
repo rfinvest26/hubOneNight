@@ -6,6 +6,17 @@ interface Groupable {
   created_at: string;
 }
 
+/** Realtime INSERT and background refresh can finish in either order. Merge by
+ * id so a slower fetch cannot erase an optimistic or just-arrived message. */
+export function mergeMessagesById<T extends Groupable>(current: T[], incoming: T[]): T[] {
+  const rows = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) rows.set(message.id, { ...rows.get(message.id), ...message });
+  return [...rows.values()].sort((a, b) => {
+    const time = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    return time || a.id.localeCompare(b.id);
+  });
+}
+
 export type ChatDisplayItem<T> =
   | { type: 'divider'; key: string; label: string }
   | { type: 'message'; key: string; message: T; showTail: boolean };
