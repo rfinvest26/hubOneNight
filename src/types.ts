@@ -58,6 +58,10 @@ export interface ModelSubscription {
   worker_id: number | null;
   status: 'pending' | 'active' | 'expired' | 'cancelled';
   price: number | null;
+  price_usd?: number | null;
+  price_local?: number | null;
+  currency_code?: string | null;
+  exchange_rate?: number | null;
   starts_at: string | null;
   expires_at: string | null;
   created_at: string;
@@ -70,6 +74,11 @@ export interface Order {
   worker_id: number;
   status: string;
   price: number | null;
+  price_usd?: number | null;
+  price_local?: number | null;
+  currency_code?: string | null;
+  exchange_rate?: number | null;
+  country_code?: string | null;
   order_date: string | null;
   order_time: string | null;
   duration: string | null;
@@ -158,7 +167,7 @@ export interface FilterState {
 
 export type CatalogSort = 'new' | 'price_asc' | 'price_desc' | 'rating';
 
-/** Верхняя граница ценового фильтра, $/час. */
+/** Верхняя граница базовой цены фильтра в USD; интерфейс показывает её в локальной валюте. */
 export const PRICE_FILTER_MAX = 1000;
 
 export const COUNTRY_LABELS: Record<string, string> = {

@@ -12,11 +12,13 @@ import PageHeader from '@/components/PageHeader';
 import VerifiedBadge from '@/components/VerifiedBadge';
 import { canonicalModelCode, findModelByFlexibleCode } from '@/lib/modelCode';
 import { requestModelSubscription } from '@/lib/modelSubscriptions';
+import { useApp } from '@/contexts/AppContext';
 
 export default function OnlyModelPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
+  const { country, currency, exchangeRate, convertUsd, formatMoney } = useApp();
   const [model, setModel] = useState<Model | null>(null);
   const [subscription, setSubscription] = useState<ModelSubscription | null>(null);
   const [subscriptionPending, setSubscriptionPending] = useState(false);
@@ -95,6 +97,10 @@ export default function OnlyModelPage() {
       modelCode: model.code,
       clientEmail: session.email,
       price,
+      priceLocal: convertUsd(price),
+      currencyCode: currency.code,
+      exchangeRate,
+      countryCode: country ?? 'ru',
       fallbackWorkerId: session.worker_id ?? model.worker_id ?? null,
     });
 
@@ -108,7 +114,7 @@ export default function OnlyModelPage() {
     if (chatId && result.created && !result.supportChatId) {
       await sendSupportMessage(
         chatId,
-        `Здравствуйте! Хочу оформить подписку на Only-профиль ${model.name} (${model.code}).\nСтоимость: $${price} / месяц.${result.subscriptionId ? `\nЗаявка: ${result.subscriptionId}` : ''}\nПодтвердите оплату и откройте доступ к закрытой ленте.`,
+        `Здравствуйте! Хочу оформить подписку на Only-профиль ${model.name} (${model.code}).\nСтоимость: ${formatMoney(price)} / месяц.${result.subscriptionId ? `\nЗаявка: ${result.subscriptionId}` : ''}\nПодтвердите оплату и откройте доступ к закрытой ленте.`,
       );
     }
     setSubscriptionPending(true);
@@ -182,7 +188,7 @@ export default function OnlyModelPage() {
                   >
                     <span className="inline-flex items-center gap-2">
                       <BadgeDollarSign size={18} />
-                      {isOpen ? 'Доступ открыт' : subscriptionPending ? 'Заявка отправлена' : submitting ? 'Создаём заявку' : `$${price} / месяц`}
+                      {isOpen ? 'Доступ открыт' : subscriptionPending ? 'Заявка отправлена' : submitting ? 'Создаём заявку' : `${formatMoney(price)} / месяц`}
                     </span>
                   </button>
                 </div>

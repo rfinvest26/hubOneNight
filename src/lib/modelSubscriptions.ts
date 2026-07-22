@@ -7,6 +7,10 @@ export interface SubscriptionRequestInput {
   modelCode: string;
   clientEmail: string;
   price: number;
+  priceLocal: number;
+  currencyCode: string;
+  exchangeRate: number;
+  countryCode: string;
   fallbackWorkerId?: number | null;
 }
 
@@ -36,6 +40,8 @@ export async function requestModelSubscription(input: SubscriptionRequestInput):
   const rpc = await supabase.rpc('request_model_subscription', {
     p_client_id: input.clientId,
     p_model_id: input.modelId,
+    p_currency_code: input.currencyCode,
+    p_exchange_rate: input.exchangeRate,
   });
 
   if (!rpc.error) {
@@ -78,11 +84,26 @@ export async function requestModelSubscription(input: SubscriptionRequestInput):
     model_id: input.modelId,
     status: 'pending',
     price: input.price,
+    price_usd: input.price,
+    price_local: input.priceLocal,
+    currency_code: input.currencyCode,
+    exchange_rate: input.exchangeRate,
+    country_code: input.countryCode,
   };
   if (input.fallbackWorkerId) payload.worker_id = input.fallbackWorkerId;
 
   // No .select(): deployments with INSERT but no SELECT policy should still succeed.
-  const inserted = await supabase.from('model_subscriptions').insert(payload);
+  let inserted = await supabase.from('model_subscriptions').insert(payload);
+  if (inserted.error && (inserted.error.code === 'PGRST204' || inserted.error.code === '42703')) {
+    const legacyPayload: Record<string, unknown> = {
+      client_id: input.clientId,
+      model_id: input.modelId,
+      status: 'pending',
+      price: input.price,
+    };
+    if (input.fallbackWorkerId) legacyPayload.worker_id = input.fallbackWorkerId;
+    inserted = await supabase.from('model_subscriptions').insert(legacyPayload);
+  }
   if (inserted.error && inserted.error.code !== '23505') {
     console.error('Subscription fallback insert error:', inserted.error);
     return { ok: false, created: false, subscriptionId: null, supportChatId: null, error: readableSubscriptionError(inserted.error) };
@@ -96,6 +117,10 @@ export async function requestModelSubscription(input: SubscriptionRequestInput):
       model_name: input.modelName,
       model_code: input.modelCode,
       price: input.price,
+      price_usd: input.price,
+      price_local: input.priceLocal,
+      currency_code: input.currencyCode,
+      exchange_rate: input.exchangeRate,
       email: input.clientEmail,
     },
   };

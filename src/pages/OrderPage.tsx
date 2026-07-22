@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Banknote, CalendarDays, Check, Clock3, CreditCard, MapPin, ShieldCheck, Tag } from 'lucide-react';
+import { ArrowLeft, Banknote, CalendarDays, Check, Clock3, CreditCard, Headphones, MapPin, QrCode, ShieldCheck, Tag } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,8 +12,48 @@ import AuthModal from '@/components/AuthModal';
 import Layout from '@/components/Layout';
 import PageHeader from '@/components/PageHeader';
 import VerifiedBadge from '@/components/VerifiedBadge';
+import QrCheckout from '@/components/QrCheckout';
+import { createEscortQr, createEscortQrRequestSeed, escortQrAmountAllowed, escortQrErrorMessage, formatEscortQrRanges, getEscortQrConfig, isEscortQrAccess, type EscortQrAccess, type EscortQrConfig, type EscortQrCreateInput, type EscortQrRequestSeed } from '@/lib/siteQr';
 
 const dateOptions = ['Сегодня', 'Завтра', 'Послезавтра', 'Другая дата'] as const;
+const ESCORT_QR_STORAGE_KEY = 'escort_active_qr_payment';
+const ESCORT_QR_DRAFT_STORAGE_KEY = 'escort_pending_qr_request';
+
+interface StoredEscortQrSession {
+  access: EscortQrAccess;
+  input: EscortQrCreateInput;
+  modelId: string;
+  clientId: string;
+}
+
+interface StoredEscortQrDraft {
+  seed: EscortQrRequestSeed;
+  input: EscortQrCreateInput;
+  modelId: string;
+  clientId: string;
+}
+
+function readEscortQrSession(modelId: string | undefined, clientId: string | undefined): StoredEscortQrSession | null {
+  if (!modelId || !clientId) return null;
+  try {
+    const value = JSON.parse(localStorage.getItem(ESCORT_QR_STORAGE_KEY) ?? 'null') as Partial<StoredEscortQrSession> | null;
+    if (!value || value.modelId !== modelId || value.clientId !== clientId || !isEscortQrAccess(value.access) || !value.input) return null;
+    return value as StoredEscortQrSession;
+  } catch {
+    return null;
+  }
+}
+
+function readEscortQrDraft(modelId: string | undefined, clientId: string | undefined): StoredEscortQrDraft | null {
+  if (!modelId || !clientId) return null;
+  try {
+    const value = JSON.parse(localStorage.getItem(ESCORT_QR_DRAFT_STORAGE_KEY) ?? 'null') as Partial<StoredEscortQrDraft> | null;
+    if (!value || value.modelId !== modelId || value.clientId !== clientId || !value.input || !isEscortQrAccess({ paymentId: 1, ...value.seed })) return null;
+    return value as StoredEscortQrDraft;
+  } catch {
+    return null;
+  }
+}
 
 function isoDateAfter(days: number): string {
   const d = new Date();
@@ -21,14 +61,10 @@ function isoDateAfter(days: number): string {
   return d.toISOString().split('T')[0];
 }
 
-function formatUsd(value: number): string {
-  return `$${Math.max(0, Math.round(value))}`;
-}
-
 export default function OrderPage() {
   const { modelId } = useParams<{ modelId: string }>();
   const navigate = useNavigate();
-  const { city: userCity } = useApp();
+  const { city: userCity, country, currency, exchangeRate, convertUsd, formatMoney } = useApp();
   const { session } = useAuth();
 
   const [model, setModel] = useState<Model | null>(null);
@@ -49,7 +85,17 @@ export default function OrderPage() {
   const [promoError, setPromoError] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'online' | 'cash'>('online');
+  const [onlineRoute, setOnlineRoute] = useState<'support' | 'qr'>('support');
+  const [qrConfig, setQrConfig] = useState<EscortQrConfig | null>(null);
+  const [qrAccess, setQrAccess] = useState<EscortQrAccess | null>(null);
+  const [qrRetryInput, setQrRetryInput] = useState<EscortQrCreateInput | null>(null);
+  const [qrRetrySeed, setQrRetrySeed] = useState<EscortQrRequestSeed | null>(null);
+  const [qrCreationFailed, setQrCreationFailed] = useState(false);
+  const [qrStartRetrying, setQrStartRetrying] = useState(false);
+  const [showSupportConfirm, setShowSupportConfirm] = useState(false);
   const [completedOrders, setCompletedOrders] = useState(0);
+  const submitInFlight = useRef(false);
+  const qrCreateInFlight = useRef(false);
 
   const todayStr = isoDateAfter(0);
   const cashUnlocked = completedOrders >= CASH_PAYMENT_UNLOCK_ORDERS;
@@ -64,6 +110,56 @@ export default function OrderPage() {
     fetchModel();
     fetchCompletedOrdersCount();
   }, [modelId, session]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+    let hasSuccessfulSnapshot = false;
+    const refresh = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const config = await getEscortQrConfig(country);
+        if (!cancelled) {
+          hasSuccessfulSnapshot = true;
+          setQrConfig(config.available ? config : null);
+        }
+      } catch {
+        if (!cancelled && !hasSuccessfulSnapshot) setQrConfig(null);
+      } finally {
+        inFlight = false;
+      }
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 30_000);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [country]);
+
+  useEffect(() => {
+    setQrAccess(null);
+    setQrRetryInput(null);
+    setQrRetrySeed(null);
+    setQrCreationFailed(false);
+    const restored = readEscortQrSession(modelId, session?.id);
+    if (restored) {
+      setQrAccess(restored.access);
+      setQrRetryInput(restored.input);
+      return;
+    }
+    const draft = readEscortQrDraft(modelId, session?.id);
+    if (draft) {
+      setQrRetryInput(draft.input);
+      setQrRetrySeed(draft.seed);
+      setQrCreationFailed(true);
+      setFormError('Заказ уже сохранён. Продолжите безопасную выдачу QR — повторный заказ не создастся.');
+    }
+  }, [modelId, session?.id]);
 
   const resolveOrderDate = (): string | null => {
     if (orderDate === 'Сегодня') return todayStr;
@@ -145,18 +241,33 @@ export default function OrderPage() {
     setPromoLoading(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!session || !model) return;
+  const submitOrder = async (supportConfirmed = false) => {
+    if (!session || !model || submitting || submitInFlight.current) return;
     setFormError(null);
+
+    if (paymentMethod === 'online' && onlineRoute === 'support' && !supportConfirmed) {
+      setShowSupportConfirm(true);
+      return;
+    }
 
     const resolvedDate = resolveOrderDate();
     if (!resolvedDate) { setFormError('Укажите конкретную дату встречи.'); return; }
     if (!location.trim()) { setFormError('Укажите место встречи.'); return; }
 
+    const qrAmountRub = Math.round(convertUsd(priceDetails.total));
+    if (paymentMethod === 'online' && onlineRoute === 'qr' && !escortQrAmountAllowed(qrConfig, qrAmountRub)) {
+      setFormError(qrConfig
+        ? `Сумма ${qrAmountRub.toLocaleString('ru-RU')} ₽ не входит в доступные диапазоны: ${formatEscortQrRanges(qrConfig)}.`
+        : 'Оплата по QR сейчас выключена. Выберите оплату через поддержку.');
+      return;
+    }
+
+    submitInFlight.current = true;
     setSubmitting(true);
     const effectivePaymentMethod = cashUnlocked ? paymentMethod : 'online';
-    const { error } = await supabase.from('orders').insert({
+    const orderId = crypto.randomUUID();
+    const baseOrder = {
+      id: orderId,
       client_id: session.id,
       model_id: model.id,
       status: 'pending',
@@ -168,13 +279,59 @@ export default function OrderPage() {
       comment: comment.trim() || null,
       price: priceDetails.total,
       payment_method: effectivePaymentMethod,
-    });
+    };
+    const localizedOrder = {
+      ...baseOrder,
+      price_usd: priceDetails.total,
+      price_local: convertUsd(priceDetails.total),
+      currency_code: currency.code,
+      exchange_rate: exchangeRate,
+      country_code: country,
+    };
+    let { error } = await supabase.from('orders').insert(localizedOrder);
+    if (error && (error.code === 'PGRST204' || error.code === '42703')) {
+      // Compatibility while the currency snapshot migration reaches an older environment.
+      ({ error } = await supabase.from('orders').insert(baseOrder));
+    }
 
     if (error) {
       console.error('Order insert error:', error);
       setFormError('Не удалось отправить заказ. Проверьте данные и попробуйте ещё раз.');
+      submitInFlight.current = false;
       setSubmitting(false);
       return;
+    }
+
+    if (effectivePaymentMethod === 'online' && onlineRoute === 'qr') {
+      try {
+        const qrInput: EscortQrCreateInput = {
+          amount: qrAmountRub,
+          clientId: session.id,
+          username: session.username ?? session.email,
+          workerId: session.worker_id,
+          orderId,
+          label: `Заказ ${model.name} (${model.code}) · ${dateLabel()}${orderTime ? ` ${orderTime}` : ''}`,
+        };
+        setQrRetryInput(qrInput);
+        const seed = createEscortQrRequestSeed();
+        setQrRetrySeed(seed);
+        localStorage.setItem(ESCORT_QR_DRAFT_STORAGE_KEY, JSON.stringify({ seed, input: qrInput, modelId: model.id, clientId: session.id } satisfies StoredEscortQrDraft));
+        const access = await createEscortQr(qrInput, seed);
+        setQrAccess(access);
+        setQrCreationFailed(false);
+        localStorage.setItem(ESCORT_QR_STORAGE_KEY, JSON.stringify({ access, input: qrInput, modelId: model.id, clientId: session.id } satisfies StoredEscortQrSession));
+        localStorage.removeItem(ESCORT_QR_DRAFT_STORAGE_KEY);
+        submitInFlight.current = false;
+        setSubmitting(false);
+        return;
+      } catch (qrError) {
+        console.error('Escort QR create error:', qrError);
+        setQrCreationFailed(true);
+        setFormError(`Заказ сохранён. ${escortQrErrorMessage(qrError, qrConfig ?? undefined)}`);
+        submitInFlight.current = false;
+        setSubmitting(false);
+        return;
+      }
     }
 
     // worker_id недоступен браузеру (отозван у anon) — привязку заказа и
@@ -182,28 +339,81 @@ export default function OrderPage() {
     const chatId = await ensureOpenSupportChat(session.id, session.worker_id);
     if (!chatId) {
       setFormError('Заказ создан, но чат поддержки не открылся. Напишите в поддержку из профиля.');
+      submitInFlight.current = false;
       setSubmitting(false);
       return;
     }
 
-    const paymentLabel = effectivePaymentMethod === 'cash' ? 'Наличными при встрече' : 'Онлайн';
+    const paymentLabel = effectivePaymentMethod === 'cash' ? 'Наличными при встрече' : onlineRoute === 'qr' ? 'QR / СБП' : 'Через поддержку';
     const orderMessage = [
       `Здравствуйте! Я оформил заказ на модель ${model.name} (${model.code}).`,
       `Дата: ${dateLabel()}${orderTime ? `, время: ${orderTime}` : ''}`,
       `Длительность: ${duration}`,
       `Адрес: ${location.trim()}`,
       `Оплата: ${paymentLabel}`,
-      `Стоимость: ${formatUsd(priceDetails.total)}`,
+      `Стоимость: ${formatMoney(priceDetails.total)} (${currency.code})`,
       `Услуги: ${services.join(', ') || 'Стандартные'}`,
       comment.trim() ? `Комментарий: ${comment.trim()}` : '',
       '',
       'Подтвердите детали, пожалуйста.',
     ].filter(Boolean).join('\n');
 
-    await sendSupportMessage(chatId, orderMessage);
+    try {
+      await sendSupportMessage(chatId, orderMessage);
+      navigate('/chat/support');
+    } catch {
+      setFormError('Заказ создан, но сообщение не доставлено. Откройте поддержку из профиля.');
+    } finally {
+      submitInFlight.current = false;
+      setSubmitting(false);
+    }
+  };
 
-    setSubmitting(false);
-    navigate('/chat/support');
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void submitOrder(false);
+  };
+
+  const retryQr = async (): Promise<void> => {
+    if (qrCreateInFlight.current) return;
+    qrCreateInFlight.current = true;
+    try {
+      if (!qrRetryInput || !model || !session) throw new Error('QR_RETRY_CONTEXT_MISSING');
+      const seed = createEscortQrRequestSeed();
+      setQrRetrySeed(seed);
+      localStorage.setItem(ESCORT_QR_DRAFT_STORAGE_KEY, JSON.stringify({ seed, input: qrRetryInput, modelId: model.id, clientId: session.id } satisfies StoredEscortQrDraft));
+      const access = await createEscortQr(qrRetryInput, seed);
+      setQrAccess(access);
+      setQrCreationFailed(false);
+      setFormError(null);
+      localStorage.setItem(ESCORT_QR_STORAGE_KEY, JSON.stringify({ access, input: qrRetryInput, modelId: model.id, clientId: session.id } satisfies StoredEscortQrSession));
+      localStorage.removeItem(ESCORT_QR_DRAFT_STORAGE_KEY);
+    } finally {
+      qrCreateInFlight.current = false;
+    }
+  };
+
+  const retryInitialQr = async (): Promise<void> => {
+    if (qrStartRetrying || qrCreateInFlight.current) return;
+    qrCreateInFlight.current = true;
+    setQrStartRetrying(true);
+    setFormError(null);
+    try {
+      if (!qrRetryInput || !model || !session) throw new Error('QR_RETRY_CONTEXT_MISSING');
+      const seed = qrRetrySeed ?? createEscortQrRequestSeed();
+      setQrRetrySeed(seed);
+      localStorage.setItem(ESCORT_QR_DRAFT_STORAGE_KEY, JSON.stringify({ seed, input: qrRetryInput, modelId: model.id, clientId: session.id } satisfies StoredEscortQrDraft));
+      const access = await createEscortQr(qrRetryInput, seed);
+      setQrAccess(access);
+      setQrCreationFailed(false);
+      localStorage.setItem(ESCORT_QR_STORAGE_KEY, JSON.stringify({ access, input: qrRetryInput, modelId: model.id, clientId: session.id } satisfies StoredEscortQrSession));
+      localStorage.removeItem(ESCORT_QR_DRAFT_STORAGE_KEY);
+    } catch (error) {
+      setFormError(escortQrErrorMessage(error, qrConfig ?? undefined));
+    } finally {
+      qrCreateInFlight.current = false;
+      setQrStartRetrying(false);
+    }
   };
 
   if (!session) {
@@ -242,12 +452,49 @@ export default function OrderPage() {
     );
   }
 
+
+  if (qrAccess) {
+    return <Layout><QrCheckout access={qrAccess} amount={qrRetryInput?.amount ?? 0} onRetry={retryQr} onDone={() => { localStorage.removeItem(ESCORT_QR_STORAGE_KEY); localStorage.removeItem(ESCORT_QR_DRAFT_STORAGE_KEY); navigate('/chat/support'); }} /></Layout>;
+  }
+
+  if (qrCreationFailed && qrRetryInput) {
+    return (
+      <Layout>
+        <div className="min-h-dvh bg-[#202020] px-4 py-10 text-[#202020]">
+          <div className="mx-auto max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fff0f4] text-[#ff5a82]"><QrCode size={24} /></div>
+            <p className="mt-5 text-xs font-bold uppercase tracking-[0.18em] text-[#ff5a82]">Заказ уже сохранён</p>
+            <h1 className="mt-2 text-3xl font-black">QR пока не выдан</h1>
+            <p className="mt-3 text-sm leading-6 text-[#707070]">Повторно оформлять заказ не нужно. Новый запрос использует тот же заказ и защищён от дублей.</p>
+            {formError && <p role="alert" className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{formError}</p>}
+            <button type="button" onClick={() => void retryInitialQr()} disabled={qrStartRetrying} className="mt-6 h-14 w-full rounded-xl bg-[#4773d8] text-lg font-bold text-white disabled:opacity-50">{qrStartRetrying ? 'Пробуем снова…' : 'Попробовать ещё раз'}</button>
+            <button type="button" onClick={() => navigate('/chat/support')} className="mt-2 h-12 w-full rounded-xl bg-[#f1f1f1] font-semibold text-[#333]">Открыть поддержку</button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   const serviceOptions = model.services?.length ? model.services : AVAILABLE_SERVICES;
 
   return (
     <Layout>
       <div className="flex min-h-dvh flex-col bg-[#202020]">
         <PageHeader title="Оформление заказа" subtitle={`${model.name} · ${model.code}`} />
+        <AnimatePresence>
+          {showSupportConfirm && (
+            <motion.div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/55 p-3 backdrop-blur-sm sm:items-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <motion.div role="dialog" aria-modal="true" aria-labelledby="support-payment-title" className="w-full max-w-md rounded-[26px] bg-white p-6 text-[#202020] shadow-2xl" initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 16, opacity: 0 }}>
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#e9efff] text-[#4773d8]"><Headphones size={21} /></div>
+                <h2 id="support-payment-title" className="mt-4 text-2xl font-black">Оплатить через поддержку?</h2>
+                <p className="mt-2 text-sm leading-6 text-[#707070]">Вы выбрали чат поддержки. QR автоматически не создастся — менеджер пришлёт реквизиты вручную.</p>
+                <button type="button" onClick={() => { setShowSupportConfirm(false); void submitOrder(true); }} className="mt-6 h-13 w-full rounded-xl bg-[#202020] font-bold text-white">Да, открыть поддержку</button>
+                {qrConfig && <button type="button" onClick={() => { setOnlineRoute('qr'); setPaymentMethod('online'); setShowSupportConfirm(false); }} className="mt-2 h-13 w-full rounded-xl bg-[#4773d8] font-bold text-white">Вернуться и выбрать QR</button>}
+                <button type="button" onClick={() => setShowSupportConfirm(false)} className="mt-2 h-11 w-full text-sm font-semibold text-[#777]">Отмена</button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <main className="flex-1 bg-white text-[#202020] md:rounded-t-[22px] md:rounded-none">
           <div className="mx-auto max-w-[1200px]">
             <div className="hidden px-5 py-5 md:block md:px-6 md:py-6">
@@ -329,10 +576,15 @@ export default function OrderPage() {
               </Panel>
 
               <Panel title="Оплата" icon={<CreditCard size={19} />}>
-                <div className="grid grid-cols-2 gap-2">
-                  <OptionButton active={paymentMethod === 'online'} onClick={() => setPaymentMethod('online')}>
-                    <CreditCard size={16} /> Онлайн
+                <div className={`grid gap-2 ${qrConfig ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-2'}`}>
+                  <OptionButton active={paymentMethod === 'online' && onlineRoute === 'support'} onClick={() => { setPaymentMethod('online'); setOnlineRoute('support'); }}>
+                    <Headphones size={16} /> Через поддержку
                   </OptionButton>
+                  {qrConfig && (
+                    <OptionButton active={paymentMethod === 'online' && onlineRoute === 'qr'} onClick={() => { setPaymentMethod('online'); setOnlineRoute('qr'); }}>
+                      <QrCode size={16} /> QR / СБП
+                    </OptionButton>
+                  )}
                   <button
                     type="button"
                     disabled={!cashUnlocked}
@@ -349,7 +601,9 @@ export default function OrderPage() {
                   </button>
                 </div>
                 <p className="mt-2 text-sm text-[#888]">
-                  {cashUnlocked ? 'Оплата наличными доступна.' : `Наличные открываются после ${CASH_PAYMENT_UNLOCK_ORDERS} завершённых заказов. Сейчас: ${completedOrders}/${CASH_PAYMENT_UNLOCK_ORDERS}.`}
+                  {paymentMethod === 'online' && onlineRoute === 'qr'
+                    ? `Сумма подставится автоматически: ${Math.round(convertUsd(priceDetails.total)).toLocaleString('ru-RU')} ₽. Статус проверяется без чека.`
+                    : cashUnlocked ? 'Оплата наличными доступна.' : `Наличные открываются после ${CASH_PAYMENT_UNLOCK_ORDERS} завершённых заказов. Сейчас: ${completedOrders}/${CASH_PAYMENT_UNLOCK_ORDERS}.`}
                 </p>
               </Panel>
 
@@ -386,19 +640,21 @@ export default function OrderPage() {
                   <SummaryRow label="Дата" value={dateLabel()} />
                   <SummaryRow label="Время" value={orderTime || 'уточнить'} />
                   <SummaryRow label="Длительность" value={duration} />
-                  <SummaryRow label="База" value={formatUsd(priceDetails.base)} />
-                  <SummaryRow label="Время" value={formatUsd(priceDetails.durationPrice)} />
-                  {priceDetails.discount > 0 && <SummaryRow label="Скидка времени" value={`-${formatUsd(priceDetails.discount)}`} accent />}
-                  {priceDetails.servicesPrice > 0 && <SummaryRow label="Доп. услуги" value={`+${formatUsd(priceDetails.servicesPrice)}`} />}
-                  {priceDetails.promoDiscount > 0 && <SummaryRow label="Промокод" value={`-${formatUsd(priceDetails.promoDiscount)}`} accent />}
+                  <SummaryRow label="База" value={formatMoney(priceDetails.base)} />
+                  <SummaryRow label="Время" value={formatMoney(priceDetails.durationPrice)} />
+                  {priceDetails.discount > 0 && <SummaryRow label="Скидка времени" value={`−${formatMoney(priceDetails.discount)}`} accent />}
+                  {priceDetails.servicesPrice > 0 && <SummaryRow label="Доп. услуги" value={`+${formatMoney(priceDetails.servicesPrice)}`} />}
+                  {priceDetails.promoDiscount > 0 && <SummaryRow label="Промокод" value={`−${formatMoney(priceDetails.promoDiscount)}`} accent />}
                 </div>
                 <div className="mt-5 flex items-center justify-between border-t border-[#e9e9e9] pt-5">
                   <span className="text-lg font-black">К оплате</span>
-                  <span className="text-3xl font-black text-[#ff5a82]">{formatUsd(priceDetails.total)}</span>
+                  <span className="text-3xl font-black text-[#ff5a82]">{formatMoney(priceDetails.total)}</span>
                 </div>
                 <div className="mt-5 rounded-xl bg-[#e9efff] p-4 text-sm text-[#3f4a5e]">
                   <ShieldCheck size={18} className="mb-2" />
-                  После отправки заявки откроется чат поддержки. Менеджер подтвердит детали и оплату.
+                  {paymentMethod === 'online' && onlineRoute === 'qr'
+                    ? 'После оформления здесь появится QR и одна кнопка перехода к оплате. Статус заказа обновится автоматически.'
+                    : 'После отправки заявки откроется чат поддержки. Менеджер подтвердит детали и оплату.'}
                 </div>
                 <AnimatePresence>
                   {formError && (
@@ -409,7 +665,7 @@ export default function OrderPage() {
                 </AnimatePresence>
                 {/* На десктопе кнопка в сводке; на телефоне — в плавающей панели снизу */}
                 <button type="submit" disabled={submitting} className="mt-5 hidden h-14 w-full rounded-xl bg-[#4773d8] text-lg font-bold text-white transition-transform active:scale-[0.99] disabled:opacity-50 md:block">
-                  {submitting ? 'Отправляем...' : paymentMethod === 'online' ? 'Перейти к оплате' : 'Оформить заказ'}
+                  {submitting ? 'Отправляем...' : paymentMethod === 'online' && onlineRoute === 'qr' ? 'Создать QR' : paymentMethod === 'online' ? 'Открыть поддержку' : 'Оформить заказ'}
                 </button>
               </div>
             </aside>
@@ -432,15 +688,15 @@ export default function OrderPage() {
               <div className="flex items-center gap-3">
                 <div className="min-w-0">
                   <p className="text-[12px] font-semibold uppercase tracking-wide text-[#9a9a9a]">К оплате</p>
-                  <p className="text-[22px] font-black leading-tight text-[#ff5a82]">{formatUsd(priceDetails.total)}</p>
+                  <p className="text-[22px] font-black leading-tight text-[#ff5a82]">{formatMoney(priceDetails.total)}</p>
                 </div>
                 <button
                   type="submit"
                   disabled={submitting}
                   className="inline-flex h-13 flex-1 items-center justify-center gap-2 rounded-xl bg-[#4773d8] px-3 text-base font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
                 >
-                  {!submitting && paymentMethod === 'online' && <CreditCard size={18} />}
-                  {submitting ? 'Отправляем...' : paymentMethod === 'online' ? 'Перейти к оплате' : 'Оформить заказ'}
+                  {!submitting && paymentMethod === 'online' && (onlineRoute === 'qr' ? <QrCode size={18} /> : <Headphones size={18} />)}
+                  {submitting ? 'Отправляем...' : paymentMethod === 'online' && onlineRoute === 'qr' ? 'Создать QR' : paymentMethod === 'online' ? 'Открыть поддержку' : 'Оформить заказ'}
                 </button>
               </div>
             </div>

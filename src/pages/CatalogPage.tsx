@@ -41,7 +41,7 @@ function modelPrice(m: Model): number {
 export default function CatalogPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { city } = useApp();
+  const { city, formatMoney } = useApp();
   const { session } = useAuth();
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
@@ -340,6 +340,7 @@ export default function CatalogPage() {
         defaults={{ ...DEFAULT_FILTERS, city: city || '' }}
         onChange={setFilters}
         onClose={closeFilters}
+        formatMoney={formatMoney}
       />
 
       {/* Сортировка на телефоне — нативный bottom-sheet */}

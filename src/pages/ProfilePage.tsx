@@ -9,6 +9,8 @@ import AuthModal from '@/components/AuthModal';
 import Layout from '@/components/Layout';
 import MobileHeader from '@/components/MobileHeader';
 import ModelCard from '@/components/ModelCard';
+import { useApp } from '@/contexts/AppContext';
+import { formatLocalSnapshot } from '@/lib/currency';
 
 type Tab = 'favorites' | 'chats' | 'orders' | 'support';
 
@@ -35,6 +37,7 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { session, logout, loading: authLoading } = useAuth();
+  const { formatMoney } = useApp();
   const [tab, setTab] = useState<Tab>((searchParams.get('tab') as Tab) || 'favorites');
   const [favorites, setFavorites] = useState<Model[]>([]);
   const [orders, setOrders] = useState<(Order & { models?: Model })[]>([]);
@@ -243,6 +246,9 @@ export default function ProfilePage() {
                                 <p><b>Время:</b> {order.duration ?? '—'}</p>
                                 <p><b>Место:</b> {order.location ?? '—'}</p>
                                 <p><b>Оплата:</b> {order.payment_method === 'cash' ? 'Наличными' : 'Онлайн'}</p>
+                                <p><b>Стоимость:</b> {order.price_local != null && order.currency_code
+                                  ? formatLocalSnapshot(Number(order.price_local), order.currency_code)
+                                  : formatMoney(Number(order.price_usd ?? order.price ?? 0))}</p>
                                 {order.services && <p className="sm:col-span-2"><b>Услуги:</b> {order.services}</p>}
                               </div>
                               {(order.status === 'pending' || order.status === 'confirmed') && (

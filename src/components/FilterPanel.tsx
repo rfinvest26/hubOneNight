@@ -8,21 +8,23 @@ interface Props {
   defaults: FilterState;
   onChange: (f: FilterState) => void;
   onClose: () => void;
+  formatMoney: (usd: number) => string;
 }
 
 function Range({
-  label, unit, min, max, valueMin, valueMax, onMin, onMax,
+  label, unit, min, max, valueMin, valueMax, onMin, onMax, formatValue,
 }: {
   label: string; unit?: string; min: number; max: number;
   valueMin: number; valueMax: number;
   onMin: (v: number) => void; onMax: (v: number) => void;
+  formatValue?: (value: number) => string;
 }) {
   return (
     <div className="py-5 first:pt-1">
       <div className="mb-3 flex items-baseline justify-between">
         <span className="text-base font-bold text-[#202020]">{label}</span>
         <span className="rounded-lg bg-[#f1f1f1] px-2.5 py-1 text-sm font-semibold text-[#555]">
-          {valueMin}–{valueMax}{unit ? ` ${unit}` : ''}
+          {formatValue ? `${formatValue(valueMin)}–${formatValue(valueMax)}` : `${valueMin}–${valueMax}${unit ? ` ${unit}` : ''}`}
         </span>
       </div>
       <div className="flex gap-3">
@@ -43,7 +45,7 @@ function Range({
   );
 }
 
-export default function FilterPanel({ open, filters, defaults, onChange, onClose }: Props) {
+export default function FilterPanel({ open, filters, defaults, onChange, onClose, formatMoney }: Props) {
   const set = (patch: Partial<FilterState>) => onChange({ ...filters, ...patch });
 
   const toggleService = (s: string) => {
@@ -89,7 +91,7 @@ export default function FilterPanel({ open, filters, defaults, onChange, onClose
     >
       <div className="divide-y divide-[#f0f0f0]">
         <Range
-          label="Цена за час" unit="$" min={0} max={PRICE_FILTER_MAX}
+          label="Цена за час" min={0} max={PRICE_FILTER_MAX} formatValue={formatMoney}
           valueMin={filters.priceMin} valueMax={filters.priceMax}
           onMin={(v) => set({ priceMin: v })} onMax={(v) => set({ priceMax: v })}
         />

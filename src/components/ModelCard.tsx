@@ -12,13 +12,8 @@ interface Props {
   onToggleFavorite?: (e: React.MouseEvent) => void;
 }
 
-function priceLabel(value: number | null | undefined, multiplier = 1): string {
-  const price = Math.max(0, Math.round((value ?? 150) * multiplier));
-  return `$${price}`;
-}
-
 export default function ModelCard({ model, onClick, onOpenOnly, isFavorite = false, onToggleFavorite }: Props) {
-  const { city: userCity } = useApp();
+  const { city: userCity, formatMoney } = useApp();
   const photo = model.photos?.[0];
   const displayCity = resolveModelCity(model, userCity) || 'Москва';
   const tags = [
@@ -61,7 +56,7 @@ export default function ModelCard({ model, onClick, onOpenOnly, isFavorite = fal
         )}
         
         <div className="absolute bottom-3 right-3 rounded-lg bg-black/60 px-2 py-1 text-sm font-black text-white backdrop-blur">
-          {priceLabel(model.price)}
+          {formatMoney(model.price ?? 150)}
         </div>
       </div>
 

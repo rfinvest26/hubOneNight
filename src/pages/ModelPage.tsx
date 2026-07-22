@@ -17,10 +17,6 @@ import { canonicalModelCode, findModelByFlexibleCode } from '@/lib/modelCode';
 import ModelLocationMap from '@/components/ModelLocationMap';
 import { buildSeededReviews, seededReviewerName } from '@/data/reviewSeeds';
 
-function price(value: number | null | undefined, multiplier = 1) {
-  return `$${Math.max(0, Math.round((value ?? 150) * multiplier))}`;
-}
-
 function formatReviewDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
@@ -79,7 +75,7 @@ function Stars({ value, size = 16 }: { value: number; size?: number }) {
 }
 
 export default function ModelPage() {
-  const { city: userCity } = useApp();
+  const { city: userCity, formatMoney } = useApp();
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
@@ -547,13 +543,13 @@ export default function ModelPage() {
                 <h2 className="text-2xl font-black">Тарифы</h2>
                 <p className="mt-5 text-xl font-black">Днём</p>
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <Tariff tone="day" title="1 час" value={price(model.price)} />
-                  <Tariff tone="day" title="2 часа" value={price(model.price, 2)} />
+                  <Tariff tone="day" title="1 час" value={formatMoney(model.price ?? 150)} />
+                  <Tariff tone="day" title="2 часа" value={formatMoney((model.price ?? 150) * 2)} />
                 </div>
                 <p className="mt-5 text-xl font-black">Ночью</p>
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <Tariff tone="night" title="1 час" value={price(model.price)} />
-                  <Tariff tone="night" title="Ночь" value={price(model.price, 6)} />
+                  <Tariff tone="night" title="1 час" value={formatMoney(model.price ?? 150)} />
+                  <Tariff tone="night" title="Ночь" value={formatMoney((model.price ?? 150) * 6)} />
                 </div>
                 <div className="mt-5 space-y-3 text-lg">
                   <div className="flex justify-between gap-4"><span>Подтверждение</span><b className="text-right">через поддержку</b></div>
@@ -602,7 +598,7 @@ export default function ModelPage() {
             onClick={() => handleAction('order')}
             className="inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl bg-[#202020] px-4 font-bold text-white active:scale-[0.98]"
           >
-            <Calendar size={18} /> Заказать · {price(model.price)}
+            <Calendar size={18} /> Заказать · {formatMoney(model.price ?? 150)}
           </button>
           {model.only_enabled !== false && (
             <button onClick={() => navigate(`/only/${model.code}`)} className="h-12 shrink-0 rounded-xl bg-[#ff5a82] px-3 font-bold text-white active:scale-[0.98]">
